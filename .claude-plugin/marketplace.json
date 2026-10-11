@@ -1,0 +1,12 @@
+{
+  "name": "ctx-footer",
+  "owner": { "name": "mrsono0" },
+  "description": "ctx-footer 마켓플레이스 — Claude Code 바닥줄 컨텍스트 사용량 라벨 mod",
+  "plugins": [
+    {
+      "name": "ctx-footer",
+      "source": "./plugin",
+      "description": "바닥줄 SessionMode 자리에 컨텍스트 사용량 라벨(넓은 화면 ctx N% · Xk/Yk, 좁은 화면 ctx N%)을 더하는 미니멀 mod"
+    }
+  ]
+}

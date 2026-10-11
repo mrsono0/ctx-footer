@@ -1,0 +1,7 @@
+{
+  "name": "ctx-footer",
+  "version": "0.1.0",
+  "description": "바닥줄 SessionMode 자리에 컨텍스트 사용량 라벨을 더하는 미니멀 mod",
+  "author": { "name": "mrsono0" },
+  "types": "./types/index.d.ts"
+}

@@ -13,8 +13,8 @@
 | P3 | 스캐폴딩 | marketplace.json·plugin/ 7종·dev-check.sh | 커밋 | 대기 |
 | P4 | 구현·단위 테스트 | plugin/hooks/register.ts·plugin/tests/register.test.ts | 커밋 | 대기 |
 | P5 | 실화면 검증 | docs/07-acceptance.md(A1–A5) | 커밋 | 대기 |
-| P6 | 상시 적용 | GitHub 마켓플레이스 설치(user scope) | **전역 설정 변경**, 설치 범위(M2) | 대기 |
-| — | 릴리스 | version 올림 + 태그 + 푸시 | 버전 커밋·태그·푸시(M1 시점) | 대기 |
+| P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | 대기 |
+| — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | 대기 |
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
@@ -56,16 +56,16 @@
 ## P6. 상시 적용
 - 목적: 모든 세션에서 쓴다(사용자 본인 포함 같은 경로).
 - 선행: P5.
-- 작업: 설치 범위 결정(M2 — 권장: GitHub 마켓플레이스 **user scope** 설치 `claude plugin install ctx-footer --marketplace mrsono0/ctx-footer`, 대안 `CLAUDE_CODE_PLUGIN_DIRS`) → 설치 → `/reload-plugins` 또는 새 세션 → 화면 확인. statusLine 정리는 **이미 완료**(P2 기록 참조) — 새 작업 없음.
-- 산출물: 설치 기록(회차 폴더), README 설치 문구 확정(M4 영문/국문 결정).
+- 작업: **user scope 설치(M2 결정)** — `claude plugin install ctx-footer --marketplace mrsono0/ctx-footer` → `/reload-plugins` 또는 새 세션 → 화면 확인. statusLine 정리는 **이미 완료**(P2 기록 참조) — 새 작업 없음.
+- 산출물: 설치 기록(회차 폴더), README 설치 문구(한글 — M4 결정).
 - 완료 기준: 실사용 세션 하단 한 줄 `ctx N%`, 되돌리는 방법 README 문서화.
 - 검증: 실화면(설치 세션에서 A1 재확인).
-- 사용자 승인: **전역 설정 변경**(플러그인 설치 = `~/.claude` 기록) 원문 + 설치 범위(M2).
+- 사용자 승인: **전역 설정 변경**(플러그인 설치 = `~/.claude` 기록) 원문.
 - 담당: lead(전역 변경 실행·백업) · impl(기록).
 
 ## 릴리스 (P7 흡수)
 - 목적: 배포 버전을 GitHub 원격에 올린다(공개 저장소 `mrsono0/ctx-footer`, 공식 디렉터리 등록 없음).
-- 선행: P5 인수 통과. 첫 태그 시점·이름은 M1(미결정 — 예: P5 인수 뒤).
+- 선행: P5 인수 통과 뒤 `v0.1.0` 태그(M1 결정, 2026-10-11).
 - 작업: `plugin/.claude-plugin/plugin.json` version 올림 → 커밋(승인) → 태그(예: `v0.1.0`) → 푸시(lead). 이후 릴리스마다 반복.
 - 산출물: 버전 커밋·태그·푸시 기록(회차 폴더).
 - 완료 기준: 태그가 원격에 있고 `mrsono0/ctx-footer#vX.Y.Z` 고정 설치가 동작.
@@ -76,10 +76,10 @@
 ## 미결정·미확인 (닫는 방법 포함)
 | 항목 | 내용 | 닫는 방법 |
 |---|---|---|
-| M1 | 첫 릴리스 시점·태그 이름(v0.1.0을 P5 인수 뒤에 붙일지) | 사용자 결정(릴리스 직전) |
-| M2 | P6 설치 범위: user scope 설치(권장) vs `CLAUDE_CODE_PLUGIN_DIRS` | 사용자 결정(전역 설정 승인과 함께) |
-| M3 | bunx로 고정할 TypeScript 버전 | P3에서 bunx 동작 확인 후 기록(팀) |
-| M4 | README 영문/국문 | 사용자 결정(공개 저장소) |
+| M1 | **결정**: 첫 릴리스는 P5 인수 뒤 `v0.1.0` 태그 | 사용자 원문 「1–3 진행, M1·M2·M4(한글로) 권장대로」(2026-10-11). 태그·푸시 승인은 릴리스 시 별도 원문 |
+| M2 | **결정**: P6 설치는 GitHub 마켓플레이스 **user scope** 설치 | 같은 원문. 전역 설정 변경 승인은 설치 시 별도 원문 |
+| M3 | **닫음**: bunx 고정 TypeScript `7.0.2`(npm 배포 2026-07-08, 안정판) | `scripts/dev-check.sh`와 같은 값. P3에서 bunx 동작 확인(2026-10-11) |
+| M4 | **결정**: README 한글 | 같은 원문(공개 저장소) |
 | M5 | 폭 기준 전환값 `WIDE_COLUMNS`(출발 100) | P5 실측으로 확정(사용자 확인) |
 | U1 연결자 | `modes` 라벨 간 ` & ` 실화면 | P5에서 다른 모드 라벨 활성화 시 관찰, 불가 시 유지 |
 | U5 데스크톱 | 데스크톱 표면 잘림 모양 | 데스크톱 앱 확보 시 실측(없으면 유지) |
