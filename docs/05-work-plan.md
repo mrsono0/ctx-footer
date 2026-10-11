@@ -14,7 +14,7 @@
 | P4 | 구현·단위 테스트 | plugin/hooks/register.ts·plugin/tests/register.test.ts | 커밋 | **완료** `13b0161` |
 | P5 | 실화면 검증 | docs/07-acceptance.md(A1–A5) | 커밋 | **완료** `9b13c01` |
 | P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | **완료** 2026-10-11(설치 0.1.0, 기록은 이 문서 커밋) |
-| — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | 대기 |
+| — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | **완료** `v0.1.0`(대상 커밋 `fbb8eab`) |
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
@@ -84,6 +84,25 @@
 - 검증: 실화면(태그 고정 설치 1회).
 - 사용자 승인: 버전 커밋 · 태그·푸시 원문(M1 시점 결정 포함).
 - 담당: impl(버전·태그 준비) · lead(푸시·사용자 승인).
+- **결과(v0.1.0, 2026-10-11, 사용자 원문 「1·2 진행, mrsono0/ctx-footer 하면 라스트 버전이 설치되도록 옵션 추가」)**
+  - 태그
+    - 주석 태그 `v0.1.0`을 커밋 `fbb8eab`(docs: README 최신·버전 고정 설치 옵션)에 붙였다.
+    - 그 판의 `plugin.json` version은 0.1.0이다. P3부터 0.1.0이었으므로 버전 올림 커밋은 없다.
+    - 원격 주석 태그 `v0.1.0`(태그 객체 `9b52e11`)의 대상 커밋(`refs/tags/v0.1.0^{}`)은 `fbb8eab`다. `git ls-remote`로 확인했다.
+  - 태그 판 구조 검사
+    - `git clone --branch v0.1.0` 사본에서 `claude plugin validate`를 마켓플레이스와 plugin에 돌렸고 통과했다.
+    - 훅은 session.start·session.measure·ui.render{SessionMode}다.
+  - 고정 설치 검증(격리 환경, cf-lead)
+    - `CLAUDE_CONFIG_DIR`과 `CLAUDE_CODE_PLUGIN_CACHE_DIR`를 임시 폴더로 두고 `claude plugin install ctx-footer --marketplace mrsono0/ctx-footer#v0.1.0`을 실행했다.
+    - 출력: «Cloning … (ref: v0.1.0)», «Successfully added marketplace: ctx-footer», «Successfully installed plugin: ctx-footer@ctx-footer (scope: user)».
+    - `claude plugin list`에서 0.1.0이 enabled 상태였다. 마켓플레이스 Source는 «GitHub (mrsono0/ctx-footer@v0.1.0)»다.
+    - 실사용 `~/.claude/settings.json`의 해시는 바뀌지 않았다.
+    - 완료 기준 「태그가 원격에 있고 고정 설치가 동작」을 충족한다.
+  - 검증 기준에서 달라진 점
+    - 계획한 검증은 「실화면(태그 고정 설치 1회)」이었다. 이번에는 격리 설치에서 설치·목록까지만 확인했고, 그 설치본으로 세션 바닥줄(실화면)은 보지 않았다.
+    - 실화면은 같은 0.1.0 판을 P6 설치본으로 확인한 것(위 P6 결과)으로 갈음한다.
+    - 근거: `git diff 27441ff v0.1.0 -- plugin/ .claude-plugin/`은 0행이다. P6 설치 직전에 푸시한 `main`(`27441ff`)부터 태그 사이에는 문서 커밋만 있다.
+    - 고정 설치본으로 실화면을 확인하는 것은 「미확인」이다.
 
 ## 미결정·미확인 (닫는 방법 포함)
 | 항목 | 내용 | 닫는 방법 |
