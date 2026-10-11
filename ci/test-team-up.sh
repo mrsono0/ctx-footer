@@ -31,18 +31,19 @@ LEAD="wN:p1|wN|CF 팀장 · Claude|claude|cf-lead|$ROOT"
 IMPL="wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID"
 CRITIC="wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$ROOT"
 
-# pane 명세: id|작업공간|label|agent|이름|cwd|gjc 세션 id
+# pane 명세: id|작업공간|label|agent|이름|cwd|gjc 세션 id|배치 y 재정의(모의 layout용)
 mkstate() {
 	python3 - "$@" >"$STATE" <<'PY'
 import sys, json
 panes = []
 for s in sys.argv[1:]:
-    pid, ws, label, agent, name, cwd, sid = (s.split("|") + [""] * 7)[:7]
+    pid, ws, label, agent, name, cwd, sid, ly = (s.split("|") + [""] * 8)[:8]
     p = {"pane_id": pid, "workspace_id": ws, "cwd": cwd, "foreground_cwd": cwd}
     if label: p["label"] = label
     if agent: p.update(agent=agent, agent_status="idle")
     if name: p["name"] = name
     if sid: p["tokens"] = {"gjc_herdr_session_id": sid}
+    if ly: p["ly"] = int(ly)
     panes.append(p)
 json.dump({"panes": panes, "next": 1}, sys.stdout, ensure_ascii=False)
 PY
@@ -116,6 +117,28 @@ run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
 
+CASE="점검: 배치 정상 — 경고 없음"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+run
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "배치 경고 없음" eq "$(printf '%s\n' "$OUT" | grep -c '배치가 기준')" 0
+
+CASE="점검: 배치 어긋남 — 경고만"
+mkstate "$LEAD" "$IMPL" "wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$ROOT||30"
+run
+check "종료 코드 0(경고가 rc에 영향 없음)" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "배치 경고 출력" line_matches "배치가 기준.*critic y=30"
+check "고치는 순서 안내" has "herdr pane move"
+
+CASE="점검: 팀원 줄이 팀장 하단보다 위(팀장 옆) — 경고"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT||10" "wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$ROOT||10"
+run
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "팀장 하단 기준 경고" line_matches "팀장 하단\(y=20\) 아래가 아님: y=10"
+
 # ---------------------------------------------------------------------------
 CASE="--up: 모두 살아 있음"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
@@ -154,6 +177,7 @@ check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --mpreset
 check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"
 check "/rename은 GJC 한 석에만" eq "$(count "send-text")" 1
+check "배치 확인 layout 호출(secure_lead 뒤에도)" eq "$(count "pane${T}layout")" 1
 
 CASE="--up: 두 번째 실행은 멱등"
 run --up

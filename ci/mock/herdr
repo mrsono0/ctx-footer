@@ -127,6 +127,19 @@ if cmd == ["pane", "split"]:
     panes.insert(panes.index(src) + 1, new)
     save()
     ok("pane_info", "pane", public(new))
+if cmd == ["pane", "layout"]:
+    src = by_id(opt("--pane")) or panes[0]
+    out = []
+    n = 0
+    for p in panes:
+        if p.get("workspace_id") != src.get("workspace_id"):
+            continue
+        rect = {"x": 0, "y": 0, "width": 100, "height": 20} if n == 0 else {"x": 10 * (n - 1), "y": 20, "width": 10, "height": 10}
+        if p.get("ly") is not None:  # mkstate 8번째 필드: y 재정의(배치 어긋남 재현)
+            rect["y"] = p["ly"]
+        out.append({"pane_id": p["pane_id"], "rect": rect})
+        n += 1
+    ok("pane_layout", "layout", {"panes": out})
 if cmd == ["pane", "swap"]:
     a, b = by_id(opt("--source-pane")), by_id(opt("--target-pane"))
     if not a or not b:

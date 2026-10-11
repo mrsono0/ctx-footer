@@ -320,6 +320,7 @@ secure_lead() {
 	ensure_label "$HERDR_PANE_ID" "${SEAT_LABEL[0]}"
 	S_STATUS[0]=alive
 	S_PANE[0]="$HERDR_PANE_ID"
+	S_INWS[0]=1 # 이 pane 자신 — 작업공간 안. 배치 확인 가드가 남아 있음(secure_lead 뒤 누락 방지)
 }
 
 # 같은 GJC 세션 id(접두어 포함)가 어느 pane에든 살아 있으면 그 pane id를 출력
@@ -336,11 +337,45 @@ for p in panes:
         print(p["pane_id"]); break' "$1"
 }
 
+# --- 배치 확인(점검·--up 끝, 읽기 전용): 팀원 석이 팀장 아래 같은 줄, 왼쪽부터 impl|critic ---
+# 어긋나도 경고만 낸다(자동 재배치 없음). 팀장·팀원 석 pane을 모르거나 다른 작업공간에 있으면 건너뛴다.
+check_layout() {
+	local lead="${S_PANE[0]}" i detail
+	[ -n "$lead" ] && [ "${S_INWS[0]}" = 1 ] || return 0
+	for i in 1 2; do
+		[ -n "${S_PANE[$i]}" ] && [ "${S_INWS[$i]}" = 1 ] || return 0
+	done
+	detail="$(herdr pane layout --pane "$lead" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    panes = json.load(sys.stdin)["result"]["layout"]["panes"]
+except Exception:
+    sys.exit(0)
+r = {p.get("pane_id"): p.get("rect") or {} for p in panes}
+lead, impl, critic = sys.argv[1:4]
+if not all(r.get(x) for x in (lead, impl, critic)):
+    sys.exit(0)
+ys = [r[x]["y"] for x in (impl, critic)]
+xs = [r[x]["x"] for x in (impl, critic)]
+if len(set(ys)) != 1:
+    print("팀원 줄 y 불일치: " + ", ".join("%s y=%s" % (n, y) for n, y in zip(("impl", "critic"), ys)))
+elif not xs[0] < xs[1]:
+    print("좌우 순서가 impl|critic 아님: x=" + ",".join(str(x) for x in xs))
+elif ys[0] < r[lead]["y"] + r[lead].get("height", 0):
+    print("팀원 줄이 팀장 하단(y=%s) 아래가 아님: y=%s" % (r[lead]["y"] + r[lead].get("height", 0), ys[0]))
+' "$lead" "${S_PANE[1]}" "${S_PANE[2]}")" || true
+	[ -z "$detail" ] && return 0
+	warn "배치가 기준(팀장 아래 한 줄, 왼쪽부터 impl|critic)과 다름: $detail"
+	warn "고치는 순서: herdr pane move <pane> --new-tab → herdr pane move <pane> --tab <tab> --split right --target-pane <왼쪽 이웃> → 필요 시 herdr pane swap · 남은 빈 탭은 herdr tab close"
+	return 0
+}
+
 classify_all
 
 case "$mode" in
 check)
 	print_table
+	check_layout
 	all_alive
 	exit
 	;;
@@ -348,6 +383,7 @@ up)
 	secure_lead
 	fail=0
 	for i in 1 2; do ensure_member "$i" "${SEAT_CMD[$i]}" || fail=1; done
+	check_layout
 	exit "$fail"
 	;;
 resume)
