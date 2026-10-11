@@ -13,7 +13,7 @@
 | P3 | 스캐폴딩 | marketplace.json·plugin/ 7종·dev-check.sh | 커밋 | **완료** `08e71d8` |
 | P4 | 구현·단위 테스트 | plugin/hooks/register.ts·plugin/tests/register.test.ts | 커밋 | **완료** `13b0161` |
 | P5 | 실화면 검증 | docs/07-acceptance.md(A1–A5) | 커밋 | **완료** `9b13c01` |
-| P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | 대기 |
+| P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | **완료** 2026-10-11(설치 0.1.0, 기록은 이 문서 커밋) |
 | — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | 대기 |
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
@@ -62,6 +62,18 @@
 - 검증: 실화면(설치 세션에서 A1 재확인).
 - 사용자 승인: **전역 설정 변경**(플러그인 설치 = `~/.claude` 기록) 원문.
 - 담당: lead(전역 변경 실행·백업) · impl(기록).
+- **결과(2026-10-11 20:31, 사용자 원문 「네, 커밋하고 P6 진행해」)**: cf-lead가 `~/.claude/settings.json`을 백업(`…bak-20261011-203117-p6`)한 뒤 `claude plugin install ctx-footer --marketplace mrsono0/ctx-footer`를 실행했다.
+  - 설치 출력: «Successfully added marketplace: ctx-footer (declared in user settings)», «Successfully installed plugin: ctx-footer@ctx-footer (scope: user)». 저장소는 HTTPS로 클론했다.
+  - `claude plugin list`: ctx-footer@ctx-footer · 0.1.0 · user · ✔ enabled.
+  - 전역 설정 변경은 두 항목뿐이다(백업과 `jq -S` diff로 확인).
+    - `enabledPlugins["ctx-footer@ctx-footer"] = true`
+    - `extraKnownMarketplaces["ctx-footer"]`(source github, repo `mrsono0/ctx-footer`)
+  - 설치 캐시(`~/.claude/plugins/cache/ctx-footer/ctx-footer/0.1.0/`)에는 `plugin/` 내용만 들어 있다. docs·scripts·AGENTS.md는 없다. docs/03 §4의 구조와 일치한다.
+  - 실화면: `--plugin-dir` 없이 새 세션을 띄웠다.
+    - 첫 응답 전에는 라벨이 없다.
+    - 응답 뒤 바닥줄 한 줄 오른쪽에 `ctx 5% · 54k/1000k`가 나왔다(약 150열, A1 재확인).
+    - 화면 원본은 cf-lead 회차 폴더에 있다: `p6-installed-footer.ansi`, sha16 `f24f0c4a673f0052`.
+  - 되돌리는 방법은 README 「되돌리기」에 적었다.
 
 ## 릴리스 (P7 흡수)
 - 목적: 배포 버전을 GitHub 원격에 올린다(공개 저장소 `mrsono0/ctx-footer`, 공식 디렉터리 등록 없음).
