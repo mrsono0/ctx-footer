@@ -173,7 +173,7 @@ check "split 2회" eq "$(count "pane${T}split")" 2
 check "impl은 팀장 아래(0.62)" eq "$(field "$i" split_from) $(field "$i" split_direction) $(field "$i" split_ratio)" "wN:p1 down 0.62"
 check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" split_direction) $(field "$c" split_ratio)" "$i right 0.500"
 check "배치 impl|critic" eq "$(order)" "$i $c"
-check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --mpreset glm53-gemini-codex56"
+check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --mpreset opus5-codex56-pro"
 check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"
 check "/rename은 GJC 한 석에만" eq "$(count "send-text")" 1
@@ -240,7 +240,7 @@ mkstate "$LEAD" "$CRITIC"
 run --resume-impl "$RESUME_SID"
 i="$(pane_named cf-impl)"
 check "종료 코드 0" eq "$RC" 0
-check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --resume $RESUME_SID --mpreset glm53-gemini-codex56"
+check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --resume $RESUME_SID --mpreset opus5-codex56-pro"
 check "run 1회(impl만)" eq "$(count "pane${T}run")" 1
 check "배치 impl|critic" eq "$(order)" "$i wN:p4"
 check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"

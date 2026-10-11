@@ -6,7 +6,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 | 이름 | 역할 | 실행 | 권한 |
 |---|---|---|---|
 | `cf-lead` | 팀장 (Claude Code) | `claude` (opus) | 저장소 파일을 쓰지 않는다. 배정·사용자 승인·최종 확인 |
-| `cf-impl` | 구현 (GJC) | `gjc --mpreset glm53-gemini-codex56` | **유일한 쓰기·커밋 담당** |
+| `cf-impl` | 구현 (GJC) | `gjc --mpreset opus5-codex56-pro` | **유일한 쓰기·커밋 담당** |
 | `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
 
 - 근거: 사용자 결정(2026-10-11, lfi-lead 경유). LFI 조사 비교에서 Codex 계열이 가장 빨랐다(24~117초). 긴 조사에서 지어낸 인용 1건이 있어 critic 조사 인용은 cf-lead가 원문과 대조한다.
@@ -39,7 +39,7 @@ LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)�
 | `SEAT_NAME` | `cf-lead cf-impl cf-critic` (scout 자리는 빈 값으로 둠) |
 | `SEAT_KIND` | `claude gjc codex` |
 | `SEAT_LABEL` | `CF 팀장 · Claude` / `CF 구현 · GJC` / `CF 검토 · Codex` |
-| `IMPL_PRESET` | `glm53-gemini-codex56` |
+| `IMPL_PRESET` | `opus5-codex56-pro` |
 | 저장소 루트 | 스크립트 위치 기준 |
 - 모드: `scripts/team-up.sh`(점검, 기본), `--up`(빠진 팀원 띄우기·이름·label·GJC `/rename`), `--resume-impl <id>`(GJC 세션 복구, 같은 id가 살아 있으면 거부).
 - 테스트: `ci/test-team-up.sh` + `ci/mock/herdr`(LFI에서 가져와 기대값만 수정), 동작이 바뀌면 1회 실행.
