@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""ci/test-team-up.sh 전용 모의 herdr. 실제 Herdr에 연결하지 않는다.
+
+상태: $MOCK_HERDR_STATE (JSON {"panes": [...], "next": N}). pane 목록 순서가 곧 배치 순서다.
+기록: 모든 호출을 $MOCK_HERDR_LOG 에 한 줄(인자를 탭으로 연결)씩 남긴다.
+pane의 "name" 필드가 agent 이름이다. 이름은 agent가 실행 중인 pane에만 붙는다(Herdr와 같음).
+"""
+import json
+import os
+import sys
+
+STATE = os.environ.get("MOCK_HERDR_STATE")
+LOG = os.environ.get("MOCK_HERDR_LOG")
+if not STATE or not LOG:
+    sys.stderr.write("mock herdr: MOCK_HERDR_STATE/MOCK_HERDR_LOG 미설정\n")
+    sys.exit(97)
+
+args = sys.argv[1:]
+with open(LOG, "a", encoding="utf-8") as f:
+    f.write("\t".join(args) + "\n")
+
+with open(STATE, encoding="utf-8") as f:
+    state = json.load(f)
+panes = state["panes"]
+
+
+def save():
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=1)
+
+
+def ok(kind, key, obj):
+    print(json.dumps({"id": "mock", "result": {key: obj, "type": kind}}, ensure_ascii=False))
+    sys.exit(0)
+
+
+def err(code, msg):
+    print(json.dumps({"error": {"code": code, "message": msg}, "id": "mock"}))
+    sys.exit(1)
+
+
+def opt(name):
+    if name in args:
+        i = args.index(name)
+        return args[i + 1] if i + 1 < len(args) else None
+    return None
+
+
+def positional(start):
+    """start 이후의 옵션이 아닌 인자들(값을 받는 옵션의 값은 제외)."""
+    takes = {"--direction", "--ratio", "--cwd", "--env", "--pane", "--right-click",
+             "--source-pane", "--target-pane", "--amount"}
+    out, i = [], start
+    while i < len(args):
+        a = args[i]
+        if a in takes:
+            i += 2
+            continue
+        if a.startswith("--"):
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+def by_id(pid):
+    return next((p for p in panes if p["pane_id"] == pid), None)
+
+
+def by_agent(target):
+    for p in panes:
+        if p.get("agent") and (p.get("name") == target or p["pane_id"] == target):
+            return p
+    return None
+
+
+def public(p):
+    q = {k: v for k, v in p.items() if k not in ("name", "command")}
+    return q
+
+
+cmd = args[:2]
+if cmd == ["pane", "list"]:
+    ok("pane_list", "panes", [public(p) for p in panes])
+if cmd == ["pane", "get"]:
+    p = by_id(args[2]) if len(args) > 2 else None
+    if not p:
+        err("pane_not_found", "pane not found")
+    ok("pane_info", "pane", public(p))
+if cmd == ["agent", "list"]:
+    ok("agent_list", "agents", [p for p in panes if p.get("agent")])
+if cmd == ["agent", "get"]:
+    p = by_agent(args[2]) if len(args) > 2 else None
+    if not p:
+        err("agent_not_found", "agent target %s not found" % (args[2] if len(args) > 2 else ""))
+    ok("agent_info", "agent", {k: v for k, v in p.items() if k != "command"})
+if cmd == ["agent", "rename"]:
+    target, name = args[2], args[3]
+    p = by_agent(target)
+    if not p:
+        err("agent_not_found", "agent target %s not found" % target)
+    holder = by_agent(name)
+    if holder and holder is not p:
+        err("agent_name_taken", "name %s already used" % name)
+    p["name"] = name
+    save()
+    ok("agent_info", "agent", p)
+if cmd == ["pane", "rename"]:
+    p = by_id(args[2])
+    if not p:
+        err("pane_not_found", "pane not found")
+    p["label"] = " ".join(args[3:])
+    save()
+    ok("pane_info", "pane", public(p))
+if cmd == ["pane", "split"]:
+    pos = positional(2)
+    target = pos[0] if pos else os.environ.get("HERDR_PANE_ID")
+    src = by_id(target)
+    if not src:
+        err("pane_not_found", "pane not found")
+    pid = "%s:n%d" % (src["workspace_id"], state.get("next", 1))
+    state["next"] = state.get("next", 1) + 1
+    cwd = opt("--cwd") or src.get("cwd")
+    new = {"pane_id": pid, "workspace_id": src["workspace_id"], "cwd": cwd, "foreground_cwd": cwd,
+           "split_from": target, "split_direction": opt("--direction"), "split_ratio": opt("--ratio")}
+    panes.insert(panes.index(src) + 1, new)
+    save()
+    ok("pane_info", "pane", public(new))
+if cmd == ["pane", "swap"]:
+    a, b = by_id(opt("--source-pane")), by_id(opt("--target-pane"))
+    if not a or not b:
+        err("pane_not_found", "pane not found")
+    ia, ib = panes.index(a), panes.index(b)
+    panes[ia], panes[ib] = b, a
+    save()
+    ok("pane_swap", "panes", [a["pane_id"], b["pane_id"]])
+if cmd == ["pane", "run"]:
+    p = by_id(args[2])
+    if not p:
+        err("pane_not_found", "pane not found")
+    text = " ".join(args[3:])
+    words = text.split("&&")[-1].split()
+    kind = words[0] if words else ""
+    p["command"] = text
+    if kind in ("gjc", "codex", "agy", "claude"):
+        p["agent"] = kind
+        p["agent_status"] = "idle"
+        if kind == "gjc":
+            sid = words[words.index("--resume") + 1] if "--resume" in words else "mock-" + p["pane_id"]
+            p["tokens"] = {"gjc_herdr_session_id": sid}
+    save()
+    ok("pane_run", "pane", public(p))
+if cmd == ["pane", "send-text"]:
+    p = by_id(args[2])
+    if not p:
+        err("pane_not_found", "pane not found")
+    text = " ".join(args[3:])
+    if text.startswith("/rename ") and p.get("agent") == "gjc":
+        p.setdefault("tokens", {})["gjc_herdr_session"] = text[len("/rename "):]
+    save()
+    ok("pane_send_text", "pane", public(p))
+if cmd == ["pane", "send-keys"]:
+    if not by_id(args[2]):
+        err("pane_not_found", "pane not found")
+    ok("pane_send_keys", "pane", {"pane_id": args[2]})
+
+sys.stderr.write("mock herdr: 지원하지 않는 명령: %s\n" % " ".join(args))
+sys.exit(2)

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(kill *)",
+      "Bash(pkill *)",
+      "Bash(killall *)",
+      "Bash(brew install *)",
+      "Bash(launchctl *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git commit *)"
+    ],
+    "allow": [
+      "Bash(herdr *)"
+    ]
+  }
+}
