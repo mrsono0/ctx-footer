@@ -103,6 +103,13 @@
     - 실화면은 같은 0.1.0 판을 P6 설치본으로 확인한 것(위 P6 결과)으로 갈음한다.
     - 근거: `git diff 27441ff v0.1.0 -- plugin/ .claude-plugin/`은 0행이다. P6 설치 직전에 푸시한 `main`(`27441ff`)부터 태그 사이에는 문서 커밋만 있다.
     - 고정 설치본으로 실화면을 확인하는 것은 「미확인」이다.
+  - 재확인(2026-10-12, cf-lead, 사용자 원문 「1」 — 선택지 1 그대로 기록 / 2 로그인해서 실화면 / 3 그대로 둠)
+    - 같은 격리 방식으로 `claude plugin install ctx-footer --marketplace mrsono0/ctx-footer#v0.1.0`을 다시 실행해 성공했다. `claude plugin list`에서 0.1.0 enabled, 격리 `installed_plugins.json`의 `gitCommitSha`는 `fbb8eab`(태그 대상 커밋)다.
+    - 같은 env로 띄운 `claude`(v2.1.296)는 테마 선택 뒤 «Select login method:» 화면에서 멈췄다. 사용자 결정으로 로그인하지 않고 종료했다.
+    - 격리 고정 설치본과 P6 설치본(`~/.claude/plugins/cache/ctx-footer/ctx-footer/0.1.0`, 위 P6 실화면 판)의 파일 sha256 목록을 비교했다. 실행 중 생기는 잠금 표식 `.in_use/`를 빼면 8개 파일(`.claude-plugin/plugin.json`, `hooks/hooks.json`, `hooks/register.ts`, `LICENSE`, `NOTICE`, `tests/register.test.ts`, `tsconfig.json`, `types/index.d.ts`)이 바이트 동일하다.
+    - 실사용 `~/.claude/settings.json` 해시(sha16 `d11ef39578bd9008`)는 확인 전후 같다.
+    - 근거는 cf-lead 회차 폴더 `pinscreen-r1`(`EVIDENCE.md`, `pin-files.sha256`, `p6-files.sha256`, `installed_plugins.json`)에 있다.
+    - 고정 설치 경로로 불러온 세션의 바닥줄은 여전히 「미확인」이다.
 
 ## 미결정·미확인 (닫는 방법 포함)
 | 항목 | 내용 | 닫는 방법 |
