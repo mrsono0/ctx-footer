@@ -4,8 +4,8 @@ import { atom, read, update } from 'claude-code'
 import type { Register, SessionContextUsage } from 'claude-code'
 import type { ContextReading } from '../types'
 
-// 폭 기준값(셀 수) — 출발값 100, P5 실측으로 확정(docs/05 M5).
-export const WIDE_COLUMNS = 100
+// 폭 기준값(셀 수) — P5 확정(docs/07 M5): 가장 긴 모드 힌트에서 최대 라벨이 한 줄에 드는 최소 폭 94 + 여유 2.
+export const WIDE_COLUMNS = 96
 
 const ctx = atom({ plugin: 'ctx-footer', key: 'context' } as const, null)
 

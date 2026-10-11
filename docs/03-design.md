@@ -13,7 +13,7 @@ ui.render {component:'SessionMode'} ──┴─ read(ctx atom) ─► next({...
 | ID | 결정 | 근거·대안 |
 |---|---|---|
 | D-1 | **엔진 그림 유지**: `modes`에 라벨 문자열을 더해 `next`로 넘긴다(색 없음, 엔진의 흐린 글씨) | 가장 작은 변경, 엔진 모양 변화에 강함. 대안: dashband처럼 자기 트리로 색 표시 — 사용자가 색을 원하면 P6에서 옵션으로 |
-| D-2 | 라벨 형식 **폭 기준 전환**: `columns ≥ 기준값`(출발 100, M5)이면 `ctx 53% · 531k/1000k`, 미만 또는 viewport 없음이면 `ctx 53%` | 변경(2026-10-11, 사용자 원문 「작은 화면은 ctx 53% 유지, 넓은 화면으로 변경되면 원래대로 복원」). 폭은 그리기 훅의 `e.viewport?.columns`(타입 [T 9751] `viewport?`, [T 10398–10403] `columns` «Cells across», [T 9748] 폭 변화 시 재그리기 — 타이머·폭 감시 이벤트 불필요). 관측 근거 docs/06 U1 — 관측 라벨 `ctx test`(8자)도 약 67열에서 줄바꿈. 기준값·실제 모양은 P5 실측 |
+| D-2 | 라벨 형식 **폭 기준 전환**: `columns ≥ 기준값`(**96**, P5 확정 — docs/07 M5)이면 `ctx 53% · 531k/1000k`, 미만 또는 viewport 없음이면 `ctx 53%` | 변경(2026-10-11, 사용자 원문 「작은 화면은 ctx 53% 유지, 넓은 화면으로 변경되면 원래대로 복원」). 폭은 그리기 훅의 `e.viewport?.columns`(타입 [T 9751] `viewport?`, [T 10398–10403] `columns` «Cells across», [T 9748] 폭 변화 시 재그리기 — 타이머·폭 감시 이벤트 불필요). 관측 근거 docs/06 U1 — 관측 라벨 `ctx test`(8자)도 약 67열에서 줄바꿈. 기준값·실제 모양은 docs/07(P5 실측) |
 | D-3 | 값이 없을 때(첫 응답 전) 라벨을 **붙이지 않는다** | **유지**(사용자 결정 「2. 권장」, 2026-10-11). docs/06 U3 관측 — `/compact` 뒤 다음 응답 전까지 이전 표시가 유지되며 이를 허용한다(압축 시 atom 초기화 이벤트는 추가하지 않음) |
 | D-4 | 상태: `atom({ plugin: 'ctx-footer', key: 'context' }, null)` 하나(값 `ContextReading \| null`) | `ContextReading = { percent: number; tokens: number \| null; window: number }` — 폭 전환에 토큰·창 필요(D-2). 값 없음 판정은 `percent == null`. 계약 `types/index.d.ts` |
 | D-5 | 표면: `e.surface`가 `terminal`·`desktop`일 때만(엔진이 그 둘에만 raise) | 추가 분기 불필요, 방어적으로 그 외는 `next(e)` |
@@ -29,7 +29,7 @@ import type { Register, SessionContextUsage } from 'claude-code'
 
 type ContextReading = { percent: number; tokens: number | null; window: number }
 
-const WIDE_COLUMNS = 100 // 폭 기준값 — 출발값, P5 실측으로 확정(미결정 M5)
+const WIDE_COLUMNS = 96 // 폭 기준값 — P5 확정(docs/07 M5)
 const ctx = atom({ plugin: 'ctx-footer', key: 'context' } as const, null)
 
 export const toReading = (c: SessionContextUsage): ContextReading | null =>
