@@ -1,0 +1,6 @@
+node_modules/
+.claude-plugin/types/
+*.log
+.DS_Store
+.gjc/
+.claude/settings.local.json

@@ -1,0 +1,8 @@
+ctx-footer
+Copyright (c) 2026 mrsono0 — MIT License (see LICENSE)
+
+This project adapts portions of dashband (https://github.com/EgonLeitner/dashband,
+commit 28496787c4f4cd6ffbfabf2ace5cda09f105ce8e), Copyright (c) 2026 Egon Leitner,
+used under the MIT License. A copy of that license is in third_party/dashband/LICENSE.
+Adapted parts: the usage-reading pattern ($.session.usage() / session.measure) and the
+SessionMode render hook shape.
