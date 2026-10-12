@@ -4,6 +4,7 @@
 #                                           종료 코드 0 = 세 석 모두 살아 있음, 1 = 아니거나 오류
 #   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
 #   scripts/team-up.sh --resume-impl <id>   구현 GJC를 `gjc --resume <id> --mpreset …`로 복구한다
+#   scripts/team-up.sh --hook-clear         SessionStart(clear) 훅 전용: 팀장 pane에 cf-lead 이름을 다시 붙인다
 # 다른 pane이 쓰는 이름은 건드리지 않는다. 살아 있는 팀원은 재생성하지 않는다.
 # 남은 빈 셸 pane(같은 작업공간·label 일치·agent 없음·저장소 cwd)은 새로 만들지 않고 재사용한다.
 set -u
@@ -25,7 +26,7 @@ RETRIES="${CF_RETRIES:-30}"         # 감지·보고 지연 대기 횟수
 RETRY_SLEEP="${CF_RETRY_SLEEP:-2}"  # 대기 간격(초) → 기본 최대 약 60초
 
 usage() {
-	sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 warn() { echo "team-up: $*" >&2; }
@@ -33,6 +34,7 @@ die() { warn "$*"; exit 1; }
 
 mode=check
 resume_id=""
+hook_sid=""
 case "${1:-}" in
 "") ;;
 --up) mode=up ;;
@@ -42,11 +44,40 @@ case "${1:-}" in
 	[ -n "$resume_id" ] || usage
 	shift
 	;;
+--hook-clear)
+	mode=hook
+	hook_sid="${2:-}" # 비었으면 훅 진입점(stdin), 있으면 백그라운드 작업
+	[ -z "$hook_sid" ] || shift
+	;;
 *) usage ;;
 esac
 [ "$#" -le 1 ] || usage
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+# --- 훅 진입점: stdin JSON의 source가 clear이고 session_id가 있을 때만 백그라운드 작업을 띄운다 ---
+# 무엇이든 실패하면 조용히 0. stdout에 쓰지 않는다(SessionStart stdout은 대화 문맥에 들어간다).
+if [ "$mode" = hook ] && [ -z "$hook_sid" ]; then
+	[ -t 0 ] && exit 0
+	command -v python3 >/dev/null || exit 0
+	hook_sid="$(python3 -c 'import json,os,select,sys,time
+deadline=time.monotonic()+2
+raw=bytearray()
+try:
+    while True:
+        remaining=deadline-time.monotonic()
+        if remaining<=0 or not select.select([sys.stdin],[],[],remaining)[0]: sys.exit(0)
+        chunk=os.read(sys.stdin.fileno(),65536)
+        if not chunk: break
+        raw.extend(chunk)
+    v=json.loads(raw)
+    sid=v.get("session_id") if isinstance(v,dict) and v.get("source")=="clear" else None
+    if isinstance(sid,str) and sid.strip(): print(sid.strip())
+except (OSError, ValueError): pass' 2>/dev/null)"
+	[ -n "$hook_sid" ] || exit 0
+	nohup "$BASH" "$0" --hook-clear "$hook_sid" </dev/null >/dev/null 2>&1 &
+	exit 0
+fi
 
 # --- 가드: Herdr pane 안, 이 저장소 안에서만 ---
 [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || die "Herdr pane 안이 아니다; 아무것도 하지 않음"
@@ -323,6 +354,20 @@ secure_lead() {
 	S_INWS[0]=1 # 이 pane 자신 — 작업공간 안. 배치 확인 가드가 남아 있음(secure_lead 뒤 누락 방지)
 }
 
+# /clear 뒤 백그라운드 작업: 팀장 label pane에서, Herdr가 새 세션 id를 볼 때까지 기다렸다가 이름을 다시 붙인다.
+# 옛 세션을 보고 있을 때 rename하면 뒤이어 지워질 수 있어서 기다린다. 다른 pane이 cf-lead를 쓰면 건드리지 않는다.
+lead_session_is() { # session_id
+	pane_has_agent "$HERDR_PANE_ID" "${SEAT_KIND[0]}" &&
+		[ "$(pane_field "$HERDR_PANE_ID" agent_session.value)" = "$1" ]
+}
+hook_clear() {
+	[ "$(printf '%s' "$self_json" | jget result.pane.label)" = "${SEAT_LABEL[0]}" ] ||
+		die "현재 pane label이 '${SEAT_LABEL[0]}'이 아니다; 아무것도 하지 않음"
+	retry lead_session_is "$hook_sid" || die "Herdr가 세션 $hook_sid 를 보지 못함; 아무것도 하지 않음"
+	retry_claim "$HERDR_PANE_ID" "${SEAT_NAME[0]}" || die "이 pane을 cf-lead로 확보하지 못함"
+	ensure_label "$HERDR_PANE_ID" "${SEAT_LABEL[0]}"
+}
+
 # 같은 GJC 세션 id(접두어 포함)가 어느 pane에든 살아 있으면 그 pane id를 출력
 # shellcheck disable=SC2016
 session_alive_in() { # id
@@ -369,6 +414,11 @@ elif ys[0] < r[lead]["y"] + r[lead].get("height", 0):
 	warn "고치는 순서: herdr pane move <pane> --new-tab → herdr pane move <pane> --tab <tab> --split right --target-pane <왼쪽 이웃> → 필요 시 herdr pane swap · 남은 빈 탭은 herdr tab close"
 	return 0
 }
+
+if [ "$mode" = hook ]; then
+	hook_clear
+	exit
+fi
 
 classify_all
 

@@ -31,7 +31,7 @@ LEAD="wN:p1|wN|CF 팀장 · Claude|claude|cf-lead|$ROOT"
 IMPL="wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID"
 CRITIC="wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$ROOT"
 
-# pane 명세: id|작업공간|label|agent|이름|cwd|gjc 세션 id|배치 y 재정의(모의 layout용)
+# pane 명세: id|작업공간|label|agent|이름|cwd|세션 id(gjc는 tokens, 그 밖은 agent_session)|배치 y 재정의(모의 layout용)
 mkstate() {
 	python3 - "$@" >"$STATE" <<'PY'
 import sys, json
@@ -42,7 +42,8 @@ for s in sys.argv[1:]:
     if label: p["label"] = label
     if agent: p.update(agent=agent, agent_status="idle")
     if name: p["name"] = name
-    if sid: p["tokens"] = {"gjc_herdr_session_id": sid}
+    if sid and agent == "gjc": p["tokens"] = {"gjc_herdr_session_id": sid}
+    elif sid: p["agent_session"] = {"value": sid}
     if ly: p["ly"] = int(ly)
     panes.append(p)
 json.dump({"panes": panes, "next": 1}, sys.stdout, ensure_ascii=False)
@@ -263,6 +264,53 @@ mkstate "$LEAD" "$CRITIC"
 run --resume-impl 'abc; touch /tmp/x'
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
+
+# ---------------------------------------------------------------------------
+LEAD_SID="42c09ae2-0000-4000-8000-000000000001"
+LEAD_CLEARED="wN:p1|wN|CF 팀장 · Claude|claude||$ROOT|$LEAD_SID"
+# 백그라운드 작업 종료 표식: 작업은 fd 9를 물려받는다. 마지막 보유자가 끝나면 EOF → HOOK_DONE 생성
+HOOK_DONE="$TMP/hook.done"
+hook_exited() { # 최대 10초
+	local i
+	for i in $(seq 100); do
+		[ -e "$HOOK_DONE" ] && return 0
+		sleep 0.1
+	done
+	return 1
+}
+
+CASE="--hook-clear: clear → 이름 확보"
+mkstate "$LEAD_CLEARED" "$IMPL" "$CRITIC"
+run --hook-clear <<<"{\"session_id\":\"$LEAD_SID\",\"source\":\"clear\"}" 9> >(cat >/dev/null; : >"$HOOK_DONE")
+check "종료 코드 0" eq "$RC" 0
+check "출력 없음" eq "$OUT" ""
+if ! hook_exited; then
+	echo "FATAL [$CASE] 백그라운드 작업이 10초 안에 끝나지 않음; 다음 케이스 오염을 막기 위해 중단" >&2
+	exit 1
+fi
+check "팀장 이름 확보" eq "$(pane_named cf-lead)" wN:p1
+check "다른 변경 없음" eq "$(mutations)" "agent${T}rename${T}wN:p1${T}cf-lead"
+
+CASE="--hook-clear: source가 clear 아님"
+mkstate "$LEAD_CLEARED"
+run --hook-clear <<<"{\"session_id\":\"$LEAD_SID\",\"source\":\"startup\"}"
+check "종료 코드 0" eq "$RC" 0
+check "출력 없음" eq "$OUT" ""
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+
+CASE="--hook-clear 작업: label 불일치"
+mkstate "wN:p1|wN|다른 시험|claude||$ROOT|$LEAD_SID"
+run --hook-clear "$LEAD_SID"
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "이름 없음" eq "$(pane_named cf-lead)" ""
+
+CASE="--hook-clear 작업: 다른 pane이 cf-lead 사용"
+mkstate "$LEAD_CLEARED" "wG:p1|wG|other|claude|cf-lead|/tmp/other-project"
+run --hook-clear "$LEAD_SID"
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "다른 pane 이름 유지" eq "$(field wG:p1 name)" cf-lead
 
 CASE="인자 오류"
 run --bogus

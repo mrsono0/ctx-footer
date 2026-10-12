@@ -42,5 +42,6 @@ LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)�
 | `IMPL_PRESET` | `opus5-codex56-pro` |
 | 저장소 루트 | 스크립트 위치 기준 |
 - 모드: `scripts/team-up.sh`(점검, 기본), `--up`(빠진 팀원 띄우기·이름·label·GJC `/rename`), `--resume-impl <id>`(GJC 세션 복구, 같은 id가 살아 있으면 거부).
+- 훅 모드: `--hook-clear`(`.claude/settings.json` SessionStart `clear` 훅 전용 — 팀장 Claude가 `/clear`로 세션 id가 바뀌어 Herdr 이름을 잃으면, label `CF 팀장 · Claude` pane에서 Herdr가 새 세션 id를 볼 때까지 기다린 뒤 `cf-lead`를 다시 붙인다. 다른 pane 소유면 건드리지 않음, stdout 없음, 백그라운드).
 - 테스트: `ci/test-team-up.sh` + `ci/mock/herdr`(LFI에서 가져와 기대값만 수정), 동작이 바뀌면 1회 실행.
 - 착수 순서(LFI와 같음): 팀장이 먼저 pane을 열고 팀원을 손으로 띄운다 → 그 팀에서 impl이 스크립트를 반영 → critic 리뷰 → 사용자 승인 후 커밋.

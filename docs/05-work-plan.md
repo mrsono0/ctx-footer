@@ -18,6 +18,8 @@
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
+- clearhook-r1(2026-10-12, 팀 환경 보강): 팀장 `/clear` 뒤 Herdr `cf-lead` 이름이 풀리는 문제(gjc-herdr #12)에 `.claude/settings.json` SessionStart `clear` 훅 + `scripts/team-up.sh --hook-clear`. 사용자 원문 「응, 훅 넣어서 진행해」. 모의 테스트 101/101. 실화면 확인(팀장 pane `/clear`)·커밋은 별도.
+
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.
 - P1(2026-10-11): 규칙·권한·team-up 3석 이식(`236e92c`), 배치 확인 이식(`5c6cb4a`). 모의 테스트 88/88, 점검 3석 alive. critic APPROVE 전 회차.

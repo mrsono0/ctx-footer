@@ -18,5 +18,15 @@
     "allow": [
       "Bash(herdr *)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "clear",
+        "hooks": [
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/team-up.sh --hook-clear" }
+        ]
+      }
+    ]
   }
 }
