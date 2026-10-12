@@ -19,6 +19,7 @@
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
 - clearhook-r1(2026-10-12, 팀 환경 보강): 팀장 `/clear` 뒤 Herdr `cf-lead` 이름이 풀리는 문제(gjc-herdr #12)에 `.claude/settings.json` SessionStart `clear` 훅 + `scripts/team-up.sh --hook-clear`. 사용자 원문 「응, 훅 넣어서 진행해」. 모의 테스트 101/101. 실화면 확인(팀장 pane `/clear`)·커밋은 별도.
+- pushallow-r1(2026-10-13, 권한 정리): 프로젝트 `.claude/settings.json` ask `Bash(git push *)`가 auto 모드보다 우선해 위임된 `main` 푸시도 매번 확인창을 띄움 → 사용자가 직접 ask에서 빼고 allow `Bash(git push origin main)`(정확 일치)를 추가(deny 무변경). 사용자 원문 「네」. critic r1 REJECT(위임 밖 푸시도 auto 판단으로 확인 없이 갈 수 있음) → 설정은 두고 docs/04에 실제 효과를 적음(cf-lead 결정, deny 보강은 안 함).
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.
