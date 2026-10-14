@@ -216,7 +216,7 @@ check "종료 코드 0" eq "$RC" 0
 check "split 1회" eq "$(count "pane${T}split")" 1
 check "impl 오른쪽으로 split" eq "$(count "pane${T}split${T}wN:p3${T}--direction${T}right${T}--ratio${T}0.500")" 1
 check "run 1회" eq "$(count "pane${T}run")" 1
-check "critic 실행 명령" eq "$(field "$new" command)" "cd $ROOT && codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
+check "critic 실행 명령" eq "$(field "$new" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "critic label" eq "$(field "$new" label)" "CF 검토 · Codex"
 check "배치 impl|critic" eq "$(order)" "wN:p3 $new"
 check "다른 석 rename 없음" eq "$(grep -cE "^agent${T}rename${T}(wN:p1|wN:p3)${T}" "$LOG")" 0
@@ -235,7 +235,7 @@ check "impl은 팀장 아래(0.6)" eq "$(field "$i" split_from) $(field "$i" spl
 check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" split_direction) $(field "$c" split_ratio)" "$i right 0.500"
 check "배치 impl|critic" eq "$(order)" "$i $c"
 check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --mpreset opus5-codex56-pro"
-check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
+check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"
 check "/rename은 GJC 한 석에만" eq "$(count "send-text")" 1
 check "배치 확인 layout 호출(secure_lead 뒤에도)" eq "$(count "pane${T}layout")" 1

@@ -7,7 +7,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 |---|---|---|---|
 | `cf-lead` | 팀장 (Claude Code) | `claude` (opus) | 저장소 파일을 쓰지 않는다. 배정·사용자 승인·최종 확인 |
 | `cf-impl` | 구현 (GJC) | `gjc --mpreset opus5-codex56-pro` | **유일한 쓰기·커밋 담당** |
-| `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
+| `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
 
 - 근거: 사용자 결정(2026-10-11, lfi-lead 경유). LFI 조사 비교에서 Codex 계열이 가장 빨랐다(24~117초). 긴 조사에서 지어낸 인용 1건이 있어 critic 조사 인용은 cf-lead가 원문과 대조한다.
 - 상주 scout가 필요해지면 4석째 `cf-scout`(GJC kimi3)를 추가한다(스크립트에 자리만 비워 둔다).
