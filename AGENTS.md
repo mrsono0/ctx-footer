@@ -30,7 +30,7 @@
 
 - 모두 이 저장소에서 실행한다. herdr 작업공간 화면은 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`. 기동·복구는 `scripts/team-up.sh`.
 - agent 이름은 herdr 전역이다. 접두어 `cf-`만 쓰고 다른 팀(`lfi-`·`lfai-` 등)의 pane·이름은 건드리지 않는다. 주소는 agent 이름으로 쓰고 pane ID는 `herdr agent list`로 확인한다(재시작 때 바뀐다).
-- **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 GJC는 이전 세션을 `gjc --resume <id>`로, critic은 `codex resume <id>`로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다).
+- **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 GJC는 이전 세션을 `gjc --resume <id>`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다.
 - 팀원에게 worktree를 주지 않는다. 같은 파일을 두 명이 동시에 쓰지 않는다.
 - **규칙·권한 파일(이 파일, `CLAUDE.md`, `.claude/settings.json`, `.codex/rules/`)은 구현자가 작성하지 않는다.** 팀장 초안 또는 critic 수정안을 구현자가 그대로 반영만 하고, 리뷰에 "구현자에게 유리하게 바꾸는가"를 고정 질문으로 둔다.
 
