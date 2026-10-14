@@ -24,6 +24,7 @@ SEAT_CMD=(
 )
 LEAD_RATIO=0.6                       # 배치 기준: 팀장(위) pane이 차지하는 세로 비율
 ROW_RATIO=0.5                        # 배치 기준: 아래 줄 impl(왼쪽) 몫. 비율 허용 오차는 ±0.01
+TEMP_TAB_WAIT=2.5                    # 임시 탭 pane 목록 안정 대기 상한(초)
 RETRIES="${CF_RETRIES:-30}"         # 감지·보고 지연 대기 횟수
 RETRY_SLEEP="${CF_RETRY_SLEEP:-2}"  # 대기 간격(초) → 기본 최대 약 60초
 
@@ -270,6 +271,9 @@ usable_anchor() { # idx — 이 작업공간에 pane이 있는 석
 	case "${S_STATUS[$1]}" in alive | unnamed | shell | spawned) [ "${S_INWS[$1]}" = 1 ] ;; *) return 1 ;; esac
 }
 
+# 배치 이동 단계 실패(기동 실패와 별도). 이동 단계의 비0은 마지막 배치·비율 보정이 모양을 고쳐도 그대로 둔다.
+layout_status=0
+
 # 없는 석의 pane을 아래 줄 순서(impl | critic)에 맞춰 만든다 → NEW_PANE
 place_new() { # idx
 	local i=$1 j k run ratio
@@ -290,8 +294,10 @@ place_new() { # idx
 		if usable_anchor "$j"; then
 			# 오른쪽 이웃만 있으면 그 오른쪽에 만든 뒤 자리를 맞바꿔 왼쪽에 둔다
 			split_pane "${S_PANE[$j]}" right 0.5 || return 1
-			herdr pane swap --source-pane "$NEW_PANE" --target-pane "${S_PANE[$j]}" >/dev/null 2>&1 ||
+			herdr pane swap --source-pane "$NEW_PANE" --target-pane "${S_PANE[$j]}" >/dev/null 2>&1 || {
+				layout_status=1
 				warn "pane swap 실패($NEW_PANE ↔ ${S_PANE[$j]}); 순서가 어긋남"
+			}
 			return 0
 		fi
 	done
@@ -488,17 +494,55 @@ print("agent" if any(p.get("agent") for p in ps) else "ok" if ps else "gone")' "
 	esac
 }
 
-# pane을 임시 탭으로 뺐다가 tab의 target 옆(split 방향, target 몫 ratio)으로 되돌린다.
+# 새 탭에는 사용자 설정이 agent 없는 Sidebar pane을 비동기로 만들 수 있다.
+# 즉시 되돌리면 원래 탭에 Sidebar가 끼어드는 경쟁이 생길 수 있으므로, 임시 탭의 pane 수가 늘어
+# 0.3초 동안 변하지 않을 때까지(또는 상한까지) 기다린다. 상한 안에 늘지 않으면(Sidebar 없음) 그대로 진행한다.
+# 반환: 0 안정됨 또는 정상 목록으로 상한 만료, 1 목록 조회 실패(시간 초과 포함) 또는 상한 안에 정상 목록을 한 번도 못 받음
+wait_temp_tab() { # tab
+	python3 -c 'import json,subprocess,sys,time
+tab,cap=sys.argv[1],float(sys.argv[2])
+end=time.monotonic()+cap; last=None; changed=0.0
+while True:
+    left=end-time.monotonic()
+    if left<=0: break
+    if last is not None and left<0.15:
+        time.sleep(left)
+        break
+    try: r=subprocess.run(["herdr","pane","list"],capture_output=True,text=True,timeout=left)
+    except Exception: sys.exit(1)
+    if r.returncode!=0: sys.exit(1)
+    try:
+        panes=json.loads(r.stdout)["result"]["panes"]
+        if not isinstance(panes,list): sys.exit(1)
+        n=sum(1 for p in panes if p.get("tab_id")==tab)
+    except Exception: sys.exit(1)
+    now=time.monotonic()
+    if n<1: last=None
+    elif n!=last: last,changed=n,now
+    if n>=2 and now-changed>=0.3: sys.exit(0)
+    left=end-now
+    if left<=0: break
+    time.sleep(min(0.1,left))
+sys.exit(0 if last is not None else 1)' "$1" "$TEMP_TAB_WAIT"
+}
+
+# pane을 임시 탭으로 뺐다가, 임시 탭 pane 목록이 안정될 때까지 기다린 뒤 tab의 target 옆으로 되돌린다.
 move_via_temp_tab() { # pane tab target split ratio
-	local tmp
+	local tmp wait_ok=1
 	tmp="$(herdr pane move "$1" --new-tab --no-focus 2>/dev/null | jget result.move_result.created_tab.tab_id)"
 	[ -n "$tmp" ] || { warn "$1 을 임시 탭으로 옮긴 것을 확인하지 못함; herdr tab list 확인"; return 1; }
+	# 대기 중 목록 조회가 실패해도 pane은 원래 탭으로 되돌리되, 실패(비0)는 유지한다.
+	wait_temp_tab "$tmp" || {
+		wait_ok=0
+		warn "임시 탭 $tmp 의 pane 목록 안정 대기 실패; $1 은 $2 로 되돌림"
+	}
 	if [ "$(herdr pane move "$1" --tab "$2" --target-pane "$3" --split "$4" --ratio "$5" --no-focus 2>/dev/null |
 		jget result.move_result.changed)" != True ]; then
 		warn "$1 을 임시 탭 $tmp 에서 $2 로 되돌리지 못함; 직접 옮긴다(herdr pane move $1 --tab $2 --target-pane $3 --split $4)"
 		return 1
 	fi
 	close_temp_tab "$tmp"
+	[ "$wait_ok" = 1 ]
 }
 
 # 배치 대상 pane → L_IMPL, L_CRITIC(이 작업공간에 pane이 있는 석만, 없으면 빈 값)
@@ -532,9 +576,9 @@ apply_layout() {
 		;;
 	move)
 		tab=$5
-		move_via_temp_tab "$impl" "$tab" "$lead" down "$LEAD_RATIO" || return 1
-		if [ "$2" = 1 ]; then
-			move_via_temp_tab "$critic" "$tab" "$impl" right "$ROW_RATIO" || return 1
+		move_via_temp_tab "$impl" "$tab" "$lead" down "$LEAD_RATIO" || layout_status=1
+		if [ "$2" = 1 ] && [ "$(pane_field "$impl" tab_id)" = "$tab" ]; then
+			move_via_temp_tab "$critic" "$tab" "$impl" right "$ROW_RATIO" || layout_status=1
 		fi
 		state="$(layout_state "$lead" "$impl" "$critic")"
 		;;
@@ -545,6 +589,10 @@ apply_layout() {
 	fit_ratios "$lead" "$impl" "$critic" $state
 	case $? in
 	0)
+		if [ "$layout_status" != 0 ]; then
+			warn "배치: 이동 단계에서 오류가 있었음; herdr pane layout 확인 뒤 scripts/team-up.sh --layout"
+			return 1
+		fi
 		echo "배치: 팀장 $lead 위($LEAD_RATIO), 아래 impl $impl${critic:+ | critic $critic($ROW_RATIO)}"
 		return 0
 		;;
@@ -557,10 +605,10 @@ apply_layout() {
 # --up·--resume-impl 끝: 배치 실패는 기동 결과를 되돌리지 않고 종료 코드만 비0으로 만든다.
 finish_layout() {
 	local rc
-	layout_seats || return 0
+	layout_seats || return "$layout_status"
 	apply_layout
 	rc=$?
-	[ "$rc" != 1 ]
+	[ "$rc" != 1 ] && [ "$layout_status" = 0 ]
 }
 
 # 점검(읽기 전용): 기준과 다르면 경고만 낸다. 종료 코드에 영향 없음.

@@ -7,14 +7,17 @@
          없는 탭은 pane 목록 순서로 만든다: 첫 pane 위(0.6), 나머지는 아래 한 줄 같은 폭.
   next   새 pane·탭 번호.
   auto_sidebar  참이면 --new-tab으로 만든 탭에 agent 없는 "Sidebar" pane을 함께 만든다(사용자 설정 재현).
+  late_sidebar  참이면 --new-tab 직후에는 Sidebar를 만들지 않고, 두 번째 pane list(또는 기다리지 않고 되돌릴 때)에 대상 pane의 탭에 늦게 만든다(늦은 Sidebar 경쟁 재현).
   auto_pane_agent  위 Sidebar pane에 줄 agent 종류(시험용, 기본 없음).
   fail   실패시킬 명령 목록(예: ["move"], ["resize"]).
+  fail_once  한 번만 실패시킬 명령 목록(예: ["move"], ["wait_list"], ["wait_timeout"]).
 기록: 모든 호출을 $MOCK_HERDR_LOG 에 한 줄(인자를 탭으로 연결)씩 남긴다.
 탭 크기는 100x33(팀장 0.6 → 높이 20).
 """
 import json
 import os
 import sys
+import time
 
 STATE = os.environ.get("MOCK_HERDR_STATE")
 LOG = os.environ.get("MOCK_HERDR_LOG")
@@ -175,9 +178,50 @@ def detach(p):
         tabs[t] = rest
 
 
+def should_fail(name):
+    if name in state.get("fail", []):
+        return True
+    once = state.get("fail_once", [])
+    if name in once:
+        once.remove(name)
+        save()
+        return True
+    return False
+
+
+def add_sidebar(p):
+    t = p["tab_id"]
+    sid = new_id(p["workspace_id"] + ":s")
+    side = {"pane_id": sid, "workspace_id": p["workspace_id"], "tab_id": t, "label": "Sidebar",
+            "cwd": p.get("cwd"), "foreground_cwd": p.get("cwd")}
+    if state.get("auto_pane_agent"):
+        side.update(agent=state["auto_pane_agent"], agent_status="idle")
+    panes.append(side)
+    tabs[t] = replace_leaf(tabs[t], p["pane_id"], {"d": "right", "r": 0.8, "a": {"p": p["pane_id"]}, "b": {"p": sid}})
+
+
 normalize()
 cmd = args[:2]
 if cmd == ["pane", "list"]:
+    if should_fail("list") or (any(":tm" in t for t in tabs) and should_fail("wait_list")):
+        err("list_failed", "mock list failure")
+    if any(":tm" in t for t in tabs) and "wait_timeout" in state.get("fail_once", []):
+        if state.pop("wait_timeout_armed", False):
+            should_fail("wait_timeout")
+            time.sleep(3)
+        else:
+            state["wait_timeout_armed"] = True
+            save()
+    pend = state.get("pending_sidebar")
+    if pend:
+        if pend["polls"] > 0:
+            pend["polls"] -= 1
+        else:
+            state.pop("pending_sidebar", None)
+            target_p = by_id(pend["pane_id"])
+            if target_p:
+                add_sidebar(target_p)
+        save()
     ok("pane_list", "panes", [public(p) for p in panes])
 if cmd == ["pane", "get"]:
     p = by_id(args[2]) if len(args) > 2 else None
@@ -247,7 +291,7 @@ if cmd == ["pane", "swap"]:
     save()
     ok("pane_swap", "panes", [a["pane_id"], b["pane_id"]])
 if cmd == ["pane", "move"]:
-    if "move" in state.get("fail", []):
+    if should_fail("move"):
         err("move_failed", "mock move failure")
     p = by_id(positional(2)[0] if positional(2) else "")
     if not p:
@@ -258,13 +302,9 @@ if cmd == ["pane", "move"]:
         p["tab_id"] = t
         tabs[t] = {"p": p["pane_id"]}
         if state.get("auto_sidebar"):
-            sid = new_id(p["workspace_id"] + ":s")
-            side = {"pane_id": sid, "workspace_id": p["workspace_id"], "tab_id": t, "label": "Sidebar",
-                    "cwd": p.get("cwd"), "foreground_cwd": p.get("cwd")}
-            if state.get("auto_pane_agent"):
-                side.update(agent=state["auto_pane_agent"], agent_status="idle")
-            panes.append(side)
-            tabs[t] = {"d": "right", "r": 0.8, "a": {"p": p["pane_id"]}, "b": {"p": sid}}
+            add_sidebar(p)
+        elif state.get("late_sidebar"):
+            state["pending_sidebar"] = {"pane_id": p["pane_id"], "polls": 1}
         save()
         ok("pane_move", "move_result", {"changed": True, "created_tab": {"tab_id": t}})
     t, target, d = opt("--tab"), opt("--target-pane"), opt("--split")
@@ -277,10 +317,14 @@ if cmd == ["pane", "move"]:
     tabs[t] = replace_leaf(tabs[t], target, {"d": d or "right", "r": float(opt("--ratio") or 0.5),
                                               "a": {"p": target}, "b": {"p": p["pane_id"]}})
     p["tab_id"] = t
+    pend = state.get("pending_sidebar")
+    if pend and pend.get("pane_id") == p["pane_id"]:
+        state.pop("pending_sidebar", None)
+        add_sidebar(p)
     save()
     ok("pane_move", "move_result", {"changed": True})
 if cmd == ["pane", "resize"]:
-    if "resize" in state.get("fail", []):
+    if should_fail("resize"):
         err("resize_failed", "mock resize failure")
     p = by_id(opt("--pane") or "")
     if not p:

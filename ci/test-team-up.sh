@@ -383,6 +383,47 @@ check "종료 코드 1" eq "$RC" 1
 check "배치 그대로" eq "$(shape wN:t1)" "right(0.80,right(0.50,wN:p1,down(0.50,wN:p3,wN:p4)),wN:pW)"
 check "안내" has "임시 탭으로 옮긴 것을 확인하지 못함"
 
+CASE="--layout: 늦은 Sidebar 생성 경쟁 → 임시 탭 안정 대기 후 되돌림"
+mkstate "$LEAD" "$IMPL" "$CRITIC" "$SIDE"
+settree wN:t1 "$MISSHAPEN"
+setstate late_sidebar true
+run --layout
+check "종료 코드 0" eq "$RC" 0
+check "배치 기준(늦은 Sidebar가 원래 탭에 끼어들지 않음)" eq "$(shape wN:t1)" "right(0.80,$TARGET,wN:pW)"
+check "agent 없는 임시 탭만 닫음(2개)" eq "$(count "tab${T}close")" 2
+check "남은 탭은 팀장 탭뿐" eq "$(tabs_of wN)" "wN:t1"
+
+CASE="--layout: 임시 탭 대기 조회 실패 → 되돌리고 보정 시도 + 최종 비0"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+settree wN:t1 "down(0.7,wN:p1,down(0.5,wN:p3,wN:p4))"
+setstate auto_sidebar true
+setstate fail_once '["wait_list"]'
+run --layout
+check "종료 코드 1(대기 실패로 비0 유지)" eq "$RC" 1
+check "되돌리고 비율 보정까지 완료" eq "$(shape wN:t1)" "$TARGET"
+check "대기 실패 안내" has "pane 목록 안정 대기 실패"
+
+CASE="--layout: 첫 정상 목록 뒤 대기 조회 시간 초과 → 되돌리고 보정 시도 + 최종 비0"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+settree wN:t1 "down(0.7,wN:p1,down(0.5,wN:p3,wN:p4))"
+setstate auto_sidebar true
+setstate fail_once '["wait_timeout"]'
+run --layout
+check "종료 코드 1(시간 초과로 비0 유지)" eq "$RC" 1
+check "되돌리고 비율 보정까지 완료" eq "$(shape wN:t1)" "$TARGET"
+check "대기 실패 안내" has "pane 목록 안정 대기 실패" "이동 단계에서 오류가 있었음"
+
+CASE="--layout: 첫 move 실패 뒤에도 나머지 이동·비율 보정 시도 + 최종 비0"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+settree wN:t1 "down(0.7,wN:p1,down(0.5,wN:p3,wN:p4))"
+setstate auto_sidebar true
+setstate fail_once '["move"]'
+run --layout
+check "종료 코드 1(이동 실패로 비0 유지)" eq "$RC" 1
+check "비율 resize 시도(1회)" eq "$(count "pane${T}resize")" 1
+check "나머지 이동·비율 보정으로 배치 기준 도달" eq "$(shape wN:t1)" "$TARGET"
+check "이동 오류 안내" has "이동 단계에서 오류가 있었음"
+
 CASE="--up: 모두 살아 있지만 모양 다름 → 끝에서 보정"
 mkstate "$LEAD" "$IMPL" "$CRITIC" "$SIDE"
 settree wN:t1 "$MISSHAPEN"
