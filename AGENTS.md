@@ -1,6 +1,6 @@
 # ctx-footer — 팀 공통 규칙
 
-모든 팀원(Claude Code·GJC·Codex)이 읽는 규칙 **정본**이다. `CLAUDE.md`는 이 파일을 참조만 하고 내용을 복사하지 않는다. 상세 배경은 `README.md`, `docs/01`~`05`(계획), 진행 단계는 `docs/05-work-plan.md`.
+모든 팀원(Claude Code·agy·Codex)이 읽는 규칙 **정본**이다. `CLAUDE.md`는 이 파일을 참조만 하고 내용을 복사하지 않는다. 상세 배경은 `README.md`, `docs/01`~`05`(계획), 진행 단계는 `docs/05-work-plan.md`.
 
 **진행 단계는 `docs/05-work-plan.md` 단계표가 기준이다.** 한 단계가 끝나면 멈추고 다음 단계 진행을 사용자와 협의한다.
 
@@ -25,12 +25,12 @@
 |---|---|---|---|
 | 사용자 | — | 요구·범위, 계획 확정, 커밋·태그·릴리스, 규칙·전역 설정 변경 승인(승인된 커밋의 `main` 푸시는 cf-lead에 위임) | — |
 | `cf-lead` 팀장 (Claude Code) | `claude` (opus) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
-| `cf-impl` 구현 (GJC) | `gjc --mpreset opus5-codex56-pro` (메인 Opus 5.5 — 사용자 결정 2026-10-11) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
+| `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --sandbox` (sandbox 켬·기본 권한 모드 — `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
 | `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
 
 - 모두 이 저장소에서 실행한다. herdr 작업공간 화면은 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`. 기동·복구는 `scripts/team-up.sh`.
 - agent 이름은 herdr 전역이다. 접두어 `cf-`만 쓰고 다른 팀(`lfi-`·`lfai-` 등)의 pane·이름은 건드리지 않는다. 주소는 agent 이름으로 쓰고 pane ID는 `herdr agent list`로 확인한다(재시작 때 바뀐다).
-- **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 GJC는 이전 세션을 `gjc --resume <id>`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다.
+- **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --sandbox`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다.
 - 팀원에게 worktree를 주지 않는다. 같은 파일을 두 명이 동시에 쓰지 않는다.
 - **규칙·권한 파일(이 파일, `CLAUDE.md`, `.claude/settings.json`, `.codex/rules/`)은 구현자가 작성하지 않는다.** 팀장 초안 또는 critic 수정안을 구현자가 그대로 반영만 하고, 리뷰에 "구현자에게 유리하게 바꾸는가"를 고정 질문으로 둔다.
 
@@ -69,10 +69,10 @@
 - `REPORT`에는 바뀐 파일·sha256, 실행한 검증과 결과(돌리지 않은 것은 「미확인」), critic 판정 요약, 남은 항목, 다음 행동을 넣는다.
 
 ### 5. 전달 방법
-- **보내기 전에 받는 쪽 입력란을 본다**: `herdr pane read <pane> --source visible --format ansi`. Claude Code는 구분선 사이 `❯` 행, Codex는 `›` 행, GJC는 테두리 상자 안 `>` 행이며, 흐린 글씨(SGR 2) 추천 문구는 빈 것이다. 글이 있으면 사람이 치는 중이니 10초쯤 기다렸다 다시 보고, 1분이 지나도 차 있거나 확인할 수 없으면 보내지 말고 자기 창에 한 줄로 남긴다(받는 쪽이 읽어 간다).
-- Claude Code·Codex에게: `herdr agent prompt <이름> "<메시지>"`.
+- **보내기 전에 받는 쪽 입력란을 본다**: `herdr pane read <pane> --source visible --format ansi`. Claude Code는 구분선 사이 `❯` 행, Codex는 `›` 행, agy는 구분선 사이 `>` 행이며, 흐린 글씨(SGR 2) 추천 문구는 빈 것이다. 글이 있으면 사람이 치는 중이니 10초쯤 기다렸다 다시 보고, 1분이 지나도 차 있거나 확인할 수 없으면 보내지 말고 자기 창에 한 줄로 남긴다(받는 쪽이 읽어 간다).
+- Claude Code·Codex·agy에게: `herdr agent prompt <이름> "<메시지>"`.
 - **cf-critic에 새 요청(리뷰 회차·조사)을 보낼 때마다 먼저 컨텍스트를 초기화한다**(사용자 결정 2026-10-11): critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`. 이유는 독립성 — 이전 회차·우리 설명을 기억하면 같은 시각에 끌려가 같은 것을 놓친다. 그래서 요청서는 그 자체로 완결한다: 2회차부터는 이전 지적 목록·근거 경로·해시를 싣고 기억에 기대지 않는다. 같은 회차 안의 되묻기(`ASK`/`ANSWER`)는 초기화하지 않는다.
-- GJC(impl)에게: `herdr pane send-text <pane> "<메시지>"` 다음 `herdr pane send-keys <pane> <키>`. 작업 중인 GJC에 지금 반영돼야 하는 것(교정·`STOP`·급한 배정)은 `enter`(steer), 다음 턴에 할 일은 `alt+q`(대기열 — 현재 턴이 끝나야 전달된다). `gjc sdk session send`는 GJC가 idle일 때만(바쁘면 Queued로 오래 갇힌다).
+- 구현 agy가 작업 중일 때 보낸 입력이 어떻게 처리되는지는 미확인이다. 작업 중인 agy에는 지금 반영돼야 하는 것(교정·`STOP`)만 보내고, 다음 배정은 `idle`·`done`이 된 뒤 보낸다. agy의 동작별 권한 확인은 lead가 내용을 읽고 1회 허용으로만 답한다(아래 대화상자 규칙).
 - 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
 - 팀원 메시지는 받는 쪽 입력창에 사용자 입력처럼 들어온다. 권위 1을 적용한다.
 - **권한·승인 대화상자**: 팀원은 다른 팀원의 대화상자에 답하지 않고 lead에 `BLOCKER`. lead는 내용을 읽고 판단한다 — 읽기 전용·팀 내부 전송·동결 사본의 테스트처럼 범위가 좁은 것은 1회 허용으로 답하고, 영구 허용(「don't ask again」 등 전역에 저장될 수 있는 것)·「사용자 승인」 항목·전역 설정·되돌리기 어려운 것은 사용자에게 묻는다.
@@ -88,15 +88,15 @@
 - **전제를 따진다.** 사용자에게 수고나 결정을 요구하는 안은 팀장이 먼저 "그 요구는 어디서 왔나(사용자 원문·docs 절·`파일:줄`)"를 확인한 뒤 올린다.
 
 ### 7. 팀장의 감시와 개입
-- 팀장은 팀원 창을 감시한다(권한 대화상자는 바로, 진척은 6분 간격). 구현 GJC는 단계 끝과 30분 무보고 시 `REPORT`.
+- 팀장은 팀원 창을 감시한다(권한 대화상자는 바로, 진척은 6분 간격). 구현자(cf-impl)는 단계 끝과 30분 무보고 시 `REPORT`.
 - 개입 시점(이때만): ① 단계 시작 DIRECTIVE ② 완료 보고 재검증 — 계획된 검사를 같은 입력으로 다시 돌리고 해시를 대조 ③ `BLOCKER`·`ESCALATE`·`NEED-APPROVAL`·회차 상한 도달 ④ 이탈(범위 밖 수정, 리뷰 입력 수정, 규칙 위반) ⑤ 사용자 승인이 필요한 일. 그 사이 리뷰·수정·회차는 impl과 critic이 직접 돈다.
 - 결정·진행 상태는 docs/05와 회차 폴더에 남긴다. 대화 기록에만 있는 결정은 없는 것으로 본다.
 
 ## 안전
 - `rm -rf`, `kill`/`pkill`/`killall`은 직접 실행하지 않는다. 테스트 스크립트 안에서 자기 자식 프로세스·자기 임시 경로만 정리한다(`trap`, 프로세스 그룹).
 - cf-critic이 저장소를 바꾸면(`git status`로 확인) 본 팀원이 즉시 `STOP`을 보내고 cf-lead에 알린다.
-- 금지: `brew install`, `launchctl`, `git push --force`, 부모 프로세스 kill, GJC·herdr·Claude Code 본체 수정.
-- **전역 설정**(`~/.claude/settings.json`, `~/.codex/`, `~/.gjc/`, 전역 플러그인 설치 등) **변경은 사용자 승인 후 lead만** 한다. 변경 전 백업하고 되돌리는 방법을 함께 보고한다.
+- 금지: `brew install`, `launchctl`, `git push --force`, 부모 프로세스 kill, agy·GJC·Codex·herdr·Claude Code 본체 수정.
+- **전역 설정**(`~/.claude/settings.json`, `~/.codex/`, `~/.gjc/`, `~/.antigravity*`·`~/.gemini/`, 전역 플러그인 설치 등) **변경은 사용자 승인 후 lead만** 한다. 변경 전 백업하고 되돌리는 방법을 함께 보고한다.
 - mod 시험은 시험 세션(새 pane, `claude --plugin-dir <폴더>`)에서만 한다. 실사용 세션·전역 설정은 건드리지 않는다.
 - Claude Code mod API·플러그인 동작은 번들 타입 정의와 공식 문서로 먼저 확인한다(근거 표기는 docs/02 방식).
 - 비밀 값은 열람·출력하지 않는다(`env`·`printenv` 덤프 금지).

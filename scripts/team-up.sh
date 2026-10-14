@@ -3,7 +3,7 @@
 #   scripts/team-up.sh                      점검만: 세 석의 pane·agent·상태 표 출력(변경 없음)
 #                                           종료 코드 0 = 세 석 모두 살아 있음, 1 = 아니거나 오류
 #   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
-#   scripts/team-up.sh --resume-impl <id>   구현 GJC를 `gjc --resume <id> --mpreset …`로 복구한다
+#   scripts/team-up.sh --resume-impl <id>   구현 agy를 `agy --conversation <id> --model … --sandbox`로 복구한다
 #   scripts/team-up.sh --layout             팀장 pane에서: 기존 세 석을 배치 기준(팀장 위 0.6, 아래 줄 impl|critic 반반)으로 맞춘다
 #   scripts/team-up.sh --hook-clear         SessionStart(clear) 훅 전용: 팀장 pane에 cf-lead 이름을 다시 붙인다
 # 다른 pane이 쓰는 이름은 건드리지 않는다. 살아 있는 팀원은 재생성하지 않는다.
@@ -12,14 +12,14 @@ set -u
 
 # --- 팀 정의: AGENTS.md 「팀」 표와 일치시킨다 (인덱스 0 = 팀장, 1..2 = 아래 줄 왼쪽부터) ---
 # 상주 scout가 필요해지면 4석째 cf-scout(GJC kimi3)를 이 표에 추가한다(docs/04 §1 — 지금은 자리만 비워 둠).
-IMPL_PRESET="opus5-codex56-pro"
+IMPL_MODEL="gemini-4-argon-high"
 SEAT_ROLE=(lead impl critic)
 SEAT_NAME=(cf-lead cf-impl cf-critic)
-SEAT_KIND=(claude gjc codex) # Herdr가 감지하는 agent 종류
-SEAT_LABEL=("CF 팀장 · Claude" "CF 구현 · GJC" "CF 검토 · Codex")
+SEAT_KIND=(claude agy codex) # Herdr가 감지하는 agent 종류
+SEAT_LABEL=("CF 팀장 · Claude" "CF 구현 · agy" "CF 검토 · Codex")
 SEAT_CMD=(
 	"" # 팀장은 사람이 이 pane에서 띄운다. 스크립트는 팀장을 실행하지 않는다.
-	"gjc --mpreset $IMPL_PRESET"
+	"agy --model $IMPL_MODEL --sandbox"
 	'codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"'
 )
 LEAD_RATIO=0.6                       # 배치 기준: 팀장(위) pane이 차지하는 세로 비율
@@ -238,29 +238,6 @@ ensure_label() { # pane label
 	[ "$(pane_field "$1" label)" = "$2" ] || herdr pane rename "$1" "$2" >/dev/null 2>&1
 }
 
-# 사이드바는 GJC 세션 이름을 보인다. GJC가 idle이고 세션 id token이 발행된 뒤에만 /rename을 입력한다.
-gjc_ready() {
-	herdr pane get "$1" 2>/dev/null | python3 -c 'import sys,json
-p=json.load(sys.stdin)["result"]["pane"]
-sys.exit(0 if p.get("agent_status")=="idle" and (p.get("tokens") or {}).get("gjc_herdr_session_id") else 1)' 2>/dev/null
-}
-gjc_named() { [ "$(pane_field "$1" tokens.gjc_herdr_session)" = "$2" ]; }
-gjc_rename_session() { # pane label
-	if ! retry gjc_ready "$1"; then
-		warn "$1: GJC가 입력 준비되지 않음; GJC 입력창에서 /rename $2 를 직접 입력"
-		return 1
-	fi
-	gjc_named "$1" "$2" && return 0
-	herdr pane send-text "$1" "/rename $2" >/dev/null 2>&1
-	herdr pane send-keys "$1" enter >/dev/null 2>&1
-	if retry gjc_named "$1" "$2"; then
-		echo "$1: GJC 세션 이름 '$2'"
-	else
-		warn "$1: /rename을 입력했지만 세션 이름 token이 바뀌지 않음; GJC 입력창 확인 필요"
-		return 1
-	fi
-}
-
 split_pane() { # target direction ratio → NEW_PANE
 	NEW_PANE="$(herdr pane split "$1" --direction "$2" --ratio "$3" --cwd "$ROOT" --no-focus 2>/dev/null |
 		jget result.pane.pane_id)"
@@ -321,7 +298,6 @@ ensure_member() { # idx command
 		retry_claim "$pane" "$name" || { warn "$name: $pane 에 이름을 확보하지 못함"; return 1; }
 		ensure_label "$pane" "$label"
 		echo "$name: 실행 중인 $pane 에 이름 부여"
-		[ "$kind" = gjc ] && gjc_rename_session "$pane" "$label"
 		return 0
 		;;
 	shell)
@@ -345,7 +321,6 @@ ensure_member() { # idx command
 	rc=$?
 	[ "$rc" = 0 ] || { warn "$name: $pane 에 이름을 확보하지 못함(rc=$rc)"; return 1; }
 	echo "$name: $pane 에서 실행 · 이름 확보"
-	[ "$kind" = gjc ] && gjc_rename_session "$pane" "$label"
 	return 0
 }
 
@@ -377,7 +352,7 @@ hook_clear() {
 	ensure_label "$HERDR_PANE_ID" "${SEAT_LABEL[0]}"
 }
 
-# 같은 GJC 세션 id(접두어 포함)가 어느 pane에든 살아 있으면 그 pane id를 출력
+# 같은 세션 id(접두어 포함)가 어느 pane에든 살아 있으면 그 pane id를 출력
 # shellcheck disable=SC2016
 session_alive_in() { # id
 	PANES_JSON="$PANES_JSON" python3 -c 'import sys,os,json
@@ -386,8 +361,8 @@ try: panes=json.loads(os.environ["PANES_JSON"])["result"]["panes"]
 except Exception: sys.exit(0)
 for p in panes:
     if not p.get("agent"): continue
-    ids=[(p.get("tokens") or {}).get("gjc_herdr_session_id"),(p.get("agent_session") or {}).get("value")]
-    if any(x and (x.startswith(sid) or sid.startswith(x)) for x in ids):
+    x=(p.get("agent_session") or {}).get("value")
+    if x and (x.startswith(sid) or sid.startswith(x)):
         print(p["pane_id"]); break' "$1"
 }
 
@@ -669,12 +644,12 @@ resume)
 	other="$(session_alive_in "$resume_id")"
 	[ -z "$other" ] || die "세션 $resume_id 가 이미 $other 에 살아 있다; 복구하지 않음"
 	case "${S_STATUS[1]}" in
-	alive | unnamed) die "구현 GJC가 이미 ${S_PANE[1]} 에 살아 있다; 복구하지 않음" ;;
+	alive | unnamed) die "구현 agy가 이미 ${S_PANE[1]} 에 살아 있다; 복구하지 않음" ;;
 	conflict) die "cf-impl: ${S_NOTE[1]} (${S_PANE[1]}); 복구하지 않음" ;;
 	esac
 	secure_lead
 	fail=0
-	ensure_member 1 "gjc --resume $resume_id --mpreset $IMPL_PRESET" || fail=1
+	ensure_member 1 "agy --conversation $resume_id --model $IMPL_MODEL --sandbox" || fail=1
 	finish_layout || fail=1
 	exit "$fail"
 	;;

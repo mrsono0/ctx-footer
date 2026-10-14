@@ -362,24 +362,11 @@ if cmd == ["pane", "run"]:
     if kind in ("gjc", "codex", "agy", "claude"):
         p["agent"] = kind
         p["agent_status"] = "idle"
-        if kind == "gjc":
-            sid = words[words.index("--resume") + 1] if "--resume" in words else "mock-" + p["pane_id"]
-            p["tokens"] = {"gjc_herdr_session_id": sid}
+        if kind == "agy":
+            sid = words[words.index("--conversation") + 1] if "--conversation" in words else "mock-" + p["pane_id"]
+            p["agent_session"] = {"value": sid}
     save()
     ok("pane_run", "pane", public(p))
-if cmd == ["pane", "send-text"]:
-    p = by_id(args[2])
-    if not p:
-        err("pane_not_found", "pane not found")
-    text = " ".join(args[3:])
-    if text.startswith("/rename ") and p.get("agent") == "gjc":
-        p.setdefault("tokens", {})["gjc_herdr_session"] = text[len("/rename "):]
-    save()
-    ok("pane_send_text", "pane", public(p))
-if cmd == ["pane", "send-keys"]:
-    if not by_id(args[2]):
-        err("pane_not_found", "pane not found")
-    ok("pane_send_keys", "pane", {"pane_id": args[2]})
 
 sys.stderr.write("mock herdr: 지원하지 않는 명령: %s\n" % " ".join(args))
 sys.exit(2)

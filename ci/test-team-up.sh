@@ -28,10 +28,10 @@ CASE=""
 
 IMPL_SID="01a126cd-0000-4000-8000-000000000001"
 LEAD="wN:p1|wN|CF 팀장 · Claude|claude|cf-lead|$ROOT"
-IMPL="wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID"
+IMPL="wN:p3|wN|CF 구현 · agy|agy|cf-impl|$ROOT|$IMPL_SID"
 CRITIC="wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$ROOT"
 
-# pane 명세: id|작업공간|label|agent|이름|cwd|세션 id(gjc는 tokens, 그 밖은 agent_session)|탭(기본 <작업공간>:t1)
+# pane 명세: id|작업공간|label|agent|이름|cwd|세션 id(agent_session.value)|탭(기본 <작업공간>:t1)
 # 탭 배치는 모의가 pane 순서로 만든다(첫 pane 위 0.6, 나머지 아래 한 줄). 다른 배치는 settree로 준다.
 mkstate() {
 	python3 - "$@" >"$STATE" <<'PY'
@@ -43,8 +43,7 @@ for s in sys.argv[1:]:
     if label: p["label"] = label
     if agent: p.update(agent=agent, agent_status="idle")
     if name: p["name"] = name
-    if sid and agent == "gjc": p["tokens"] = {"gjc_herdr_session_id": sid}
-    elif sid: p["agent_session"] = {"value": sid}
+    if sid: p["agent_session"] = {"value": sid}
     panes.append(p)
 json.dump({"panes": panes, "next": 1}, sys.stdout, ensure_ascii=False)
 PY
@@ -194,7 +193,7 @@ check "종료 코드 0" eq "$RC" 0
 check "배치 경고 없음" eq "$(printf '%s\n' "$OUT" | grep -c '배치')" 0
 
 CASE="점검: impl이 다른 탭 — 경고만"
-mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID|wN:t2" "$CRITIC"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · agy|agy|cf-impl|$ROOT|$IMPL_SID|wN:t2" "$CRITIC"
 run
 check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
@@ -220,7 +219,6 @@ check "critic 실행 명령" eq "$(field "$new" command)" "cd $ROOT && codex --s
 check "critic label" eq "$(field "$new" label)" "CF 검토 · Codex"
 check "배치 impl|critic" eq "$(order)" "wN:p3 $new"
 check "다른 석 rename 없음" eq "$(grep -cE "^agent${T}rename${T}(wN:p1|wN:p3)${T}" "$LOG")" 0
-check "send-text 없음(critic은 GJC 아님)" eq "$(count "send-text")" 0
 
 CASE="--up: 팀원 모두 없음(새 기동)"
 mkstate "wN:p1|wN||claude||$ROOT"
@@ -234,10 +232,10 @@ check "split 2회" eq "$(count "pane${T}split")" 2
 check "impl은 팀장 아래(0.6)" eq "$(field "$i" split_from) $(field "$i" split_direction) $(field "$i" split_ratio)" "wN:p1 down 0.6"
 check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" split_direction) $(field "$c" split_ratio)" "$i right 0.500"
 check "배치 impl|critic" eq "$(order)" "$i $c"
-check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --mpreset opus5-codex56-pro"
+check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-argon-high --sandbox"
+check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
 check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
-check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"
-check "/rename은 GJC 한 석에만" eq "$(count "send-text")" 1
+check "send-text 없음" eq "$(count "send-text")" 0
 check "배치 확인 layout 호출(secure_lead 뒤에도)" eq "$(count "pane${T}layout")" 1
 check "새 pane은 처음부터 기준 자리(move·resize 없음)" eq "$(grep -cE "^pane${T}(move|resize)${T}" "$LOG")" 0
 check "배치 기준" eq "$(shape wN:t1)" "down(0.60,wN:p1,right(0.50,$i,$c))"
@@ -248,7 +246,7 @@ check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
 
 CASE="--up: 남은 빈 셸 pane 재사용"
-mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|||$ROOT" "$CRITIC"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · agy|||$ROOT" "$CRITIC"
 run --up
 check "종료 코드 0" eq "$RC" 0
 check "split 없음" eq "$(count "pane${T}split")" 0
@@ -257,7 +255,7 @@ check "이름 확보" eq "$(pane_named cf-impl)" wN:p3
 check "배치 그대로" eq "$(order)" "wN:p3 wN:p4"
 
 CASE="--up: label 일치 agent가 이름만 잃음"
-mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc||$ROOT|$IMPL_SID" "$CRITIC"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · agy|agy||$ROOT|$IMPL_SID" "$CRITIC"
 run --up
 check "종료 코드 0" eq "$RC" 0
 check "split·run 없음" eq "$(grep -cE "^pane${T}(split|run)${T}" "$LOG")" 0
@@ -361,7 +359,7 @@ check "resize 1회" eq "$(count "pane${T}resize")" 1
 check "팀장 0.6 / impl 아래" eq "$(shape wN:t1)" "down(0.60,wN:p1,wN:p3)"
 
 CASE="--layout: impl이 다른 탭 → 옮기지 않고 비0"
-mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID|wN:t2" "$CRITIC"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · agy|agy|cf-impl|$ROOT|$IMPL_SID|wN:t2" "$CRITIC"
 run --layout
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
@@ -460,6 +458,15 @@ check "critic 생성 없음" eq "$(grep -cE "^pane${T}(split|run)${T}" "$LOG")" 
 check "다른 pane 이름 유지" eq "$(field wG:p1 name)" cf-critic
 check "충돌 보고" has "cf-critic"
 
+CASE="--up: cf-impl을 다른 종류 agent(GJC)가 사용 → conflict(건드리지 않음)"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID" "$CRITIC"
+run --up
+check "종료 코드 1" eq "$RC" 1
+check "cf-impl rename 없음" eq "$(grep -cE "^agent${T}rename${T}.*${T}cf-impl\$" "$LOG")" 0
+check "impl 생성·실행 없음" eq "$(grep -cE "^pane${T}(split|run)${T}" "$LOG")" 0
+check "GJC pane 이름·종류 유지" eq "$(field wN:p3 name)|$(field wN:p3 agent)" "cf-impl|gjc"
+check "충돌 보고" has "cf-impl" "다른 종류 agent(gjc)가 이름 사용"
+
 CASE="--up: 다른 pane이 cf-lead 이름 사용"
 mkstate "wN:p1|wN||claude||$ROOT" "wG:p1|wG|other|claude|cf-lead|/tmp/other-project"
 run --up
@@ -481,23 +488,31 @@ mkstate "$LEAD" "$CRITIC"
 run --resume-impl "$RESUME_SID"
 i="$(pane_named cf-impl)"
 check "종료 코드 0" eq "$RC" 0
-check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && gjc --resume $RESUME_SID --mpreset opus5-codex56-pro"
+check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-argon-high --sandbox"
 check "run 1회(impl만)" eq "$(count "pane${T}run")" 1
 check "배치 impl|critic" eq "$(order)" "$i wN:p4"
-check "GJC 세션 /rename" eq "$(field "$i" tokens.gjc_herdr_session)" "CF 구현 · GJC"
+check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
 
 CASE="--resume-impl: 같은 id가 다른 pane에 살아 있음"
-mkstate "$LEAD" "$CRITIC" "wG:p5|wG|x|gjc||/tmp/other-project|$RESUME_SID"
+mkstate "$LEAD" "$CRITIC" "wG:p5|wG|x|agy||/tmp/other-project|$RESUME_SID"
 run --resume-impl "${RESUME_SID:0:13}"
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
 check "거부 사유" has "wG:p5"
 
-CASE="--resume-impl: 구현 GJC가 이미 살아 있음"
+CASE="--resume-impl: 구현 agy가 이미 살아 있음"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
 run --resume-impl "$RESUME_SID"
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
+check "거부 사유" has "구현 agy가 이미 wN:p3 에 살아 있다"
+
+CASE="--resume-impl: cf-impl을 GJC가 사용 → conflict 거부"
+mkstate "$LEAD" "wN:p3|wN|CF 구현 · GJC|gjc|cf-impl|$ROOT|$IMPL_SID" "$CRITIC"
+run --resume-impl "$RESUME_SID"
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "충돌 사유" has "cf-impl" "다른 종류 agent(gjc)가 이름 사용"
 
 CASE="--resume-impl: id 형식 거부"
 mkstate "$LEAD" "$CRITIC"
