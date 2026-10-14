@@ -15,11 +15,13 @@
 | P5 | 실화면 검증 | docs/07-acceptance.md(A1–A5) | 커밋 | **완료** `9b13c01` |
 | P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | **완료** 2026-10-11(설치 0.1.0, 기록은 이 문서 커밋) |
 | — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | **완료** `v0.1.0`(대상 커밋 `fbb8eab`) |
+| 운영 | 배치 기준(team-up) | `scripts/team-up.sh` 배치 기준(팀장 위 0.6, 아래 줄 impl\|critic 0.5, ±0.01)·`--layout`·`--up`/`--resume-impl` 끝 보정·모의 테스트 163/163 | 커밋 | **구현·모의 테스트 완료** — 실화면(`--layout`)·커밋 미완 |
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
 - clearhook-r1(2026-10-12, 팀 환경 보강): 팀장 `/clear` 뒤 Herdr `cf-lead` 이름이 풀리는 문제(gjc-herdr #12)에 `.claude/settings.json` SessionStart `clear` 훅 + `scripts/team-up.sh --hook-clear`. 사용자 원문 「응, 훅 넣어서 진행해」. 모의 테스트 101/101. 실화면 확인(팀장 pane `/clear`)·커밋은 별도.
 - pushallow-r1(2026-10-13, 권한 정리): 프로젝트 `.claude/settings.json` ask `Bash(git push *)`가 auto 모드보다 우선해 위임된 `main` 푸시도 매번 확인창을 띄움 → 사용자가 직접 ask에서 빼고 allow `Bash(git push origin main)`(정확 일치)를 추가(deny 무변경). 사용자 원문 「네」. critic r1 REJECT(위임 밖 푸시도 auto 판단으로 확인 없이 갈 수 있음) → 설정은 두고 docs/04에 실제 효과를 적음(cf-lead 결정, deny 보강은 안 함).
+- layout-r1(2026-10-14, 팀 환경 보강): GJCH 팀과 합의한 배치 기준을 `scripts/team-up.sh` 기능으로. 사용자 원문 「커밋 승인, 배치 작업도 진행, 덤도 진행」. 새 pane은 기준 자리에 만들고, `--up`·`--resume-impl` 끝과 `--layout`에서 팀장·impl이 같은 탭이면 보정(모양이 맞으면 비율만 resize, 다르면 임시 탭 경유 `pane move --no-focus`). critic은 같은 탭일 때만 함께, 아니면 팀장 0.6/impl 아래만. Sidebar 등 세 석 밖 pane은 옮기거나 크기를 바꾸거나 닫지 않고, 임시 탭은 남은 pane이 모두 agent 없을 때만 닫는다. 배치 실패는 기동을 되돌리지 않고 종료 코드만 비0 + 안내. 점검(인자 없음)은 경고만, `--hook-clear`는 배치를 읽지도 않는다.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.

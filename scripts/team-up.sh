@@ -4,6 +4,7 @@
 #                                           종료 코드 0 = 세 석 모두 살아 있음, 1 = 아니거나 오류
 #   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
 #   scripts/team-up.sh --resume-impl <id>   구현 GJC를 `gjc --resume <id> --mpreset …`로 복구한다
+#   scripts/team-up.sh --layout             팀장 pane에서: 기존 세 석을 배치 기준(팀장 위 0.6, 아래 줄 impl|critic 반반)으로 맞춘다
 #   scripts/team-up.sh --hook-clear         SessionStart(clear) 훅 전용: 팀장 pane에 cf-lead 이름을 다시 붙인다
 # 다른 pane이 쓰는 이름은 건드리지 않는다. 살아 있는 팀원은 재생성하지 않는다.
 # 남은 빈 셸 pane(같은 작업공간·label 일치·agent 없음·저장소 cwd)은 새로 만들지 않고 재사용한다.
@@ -21,12 +22,13 @@ SEAT_CMD=(
 	"gjc --mpreset $IMPL_PRESET"
 	'codex --search --yolo -m gpt-6.1-sol -c model_reasoning_effort="high"'
 )
-LEAD_RATIO=0.62                      # 팀장(위) pane이 차지하는 세로 비율
+LEAD_RATIO=0.6                       # 배치 기준: 팀장(위) pane이 차지하는 세로 비율
+ROW_RATIO=0.5                        # 배치 기준: 아래 줄 impl(왼쪽) 몫. 비율 허용 오차는 ±0.01
 RETRIES="${CF_RETRIES:-30}"         # 감지·보고 지연 대기 횟수
 RETRY_SLEEP="${CF_RETRY_SLEEP:-2}"  # 대기 간격(초) → 기본 최대 약 60초
 
 usage() {
-	sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 warn() { echo "team-up: $*" >&2; }
@@ -38,6 +40,7 @@ hook_sid=""
 case "${1:-}" in
 "") ;;
 --up) mode=up ;;
+--layout) mode=layout ;;
 --resume-impl)
 	mode=resume
 	resume_id="${2:-}"
@@ -382,36 +385,205 @@ for p in panes:
         print(p["pane_id"]); break' "$1"
 }
 
-# --- 배치 확인(점검·--up 끝, 읽기 전용): 팀원 석이 팀장 아래 같은 줄, 왼쪽부터 impl|critic ---
-# 어긋나도 경고만 낸다(자동 재배치 없음). 팀장·팀원 석 pane을 모르거나 다른 작업공간에 있으면 건너뛴다.
-check_layout() {
-	local lead="${S_PANE[0]}" i detail
-	[ -n "$lead" ] && [ "${S_INWS[0]}" = 1 ] || return 0
-	for i in 1 2; do
-		[ -n "${S_PANE[$i]}" ] && [ "${S_INWS[$i]}" = 1 ] || return 0
-	done
-	detail="$(herdr pane layout --pane "$lead" 2>/dev/null | python3 -c '
-import sys, json
+# --- 배치: 기준은 팀장 위(LEAD_RATIO), 아래 줄 왼쪽부터 impl|critic(ROW_RATIO), 비율 허용 오차 ±0.01 ---
+# 같은 탭 안 pane move는 same_tab으로 무시되므로 임시 탭을 거친다. pane swap은 focus를 옮기므로 재배치에 쓰지 않고,
+# 모든 move는 --no-focus. 세 석 밖의 pane(Sidebar 등)은 옮기거나 크기를 바꾸거나 닫지 않는다.
+
+# 팀장 탭의 배치 상태 → "상태 critic포함 아래비율 줄비율 탭" (layout을 읽지 못하면 빈 값)
+#   상태: ok(기준 모양) / move(모양이 다름, 옮겨도 됨) / mixed(모양이 다르고 세 석 밖 pane이 섞여 있음)
+#         / away(impl이 팀장 탭에 없음)
+#   move 조건: 세 석이 한 분할 영역을 빈틈없이 채운다(그 영역 안에 다른 pane 없음). 그래야 석을 빼고 되돌려도
+#   영역 밖 pane(Sidebar 등)의 자리·크기가 바뀌지 않는다. 아니면 mixed — 옮기지 않는다.
+#   critic포함: critic pane이 팀장 탭에 있으면 1(그때만 critic까지 본다), 아니면 0 — 팀장·impl만 맞춘다
+# shellcheck disable=SC2016
+layout_state() { # lead impl [critic]
+	herdr pane layout --pane "$1" 2>/dev/null | python3 -c 'import sys,json
+lead,impl,critic=sys.argv[1:4]
 try:
-    panes = json.load(sys.stdin)["result"]["layout"]["panes"]
-except Exception:
-    sys.exit(0)
-r = {p.get("pane_id"): p.get("rect") or {} for p in panes}
-lead, impl, critic = sys.argv[1:4]
-if not all(r.get(x) for x in (lead, impl, critic)):
-    sys.exit(0)
-ys = [r[x]["y"] for x in (impl, critic)]
-xs = [r[x]["x"] for x in (impl, critic)]
-if len(set(ys)) != 1:
-    print("팀원 줄 y 불일치: " + ", ".join("%s y=%s" % (n, y) for n, y in zip(("impl", "critic"), ys)))
-elif not xs[0] < xs[1]:
-    print("좌우 순서가 impl|critic 아님: x=" + ",".join(str(x) for x in xs))
-elif ys[0] < r[lead]["y"] + r[lead].get("height", 0):
-    print("팀원 줄이 팀장 하단(y=%s) 아래가 아님: y=%s" % (r[lead]["y"] + r[lead].get("height", 0), ys[0]))
-' "$lead" "${S_PANE[1]}" "${S_PANE[2]}")" || true
-	[ -z "$detail" ] && return 0
-	warn "배치가 기준(팀장 아래 한 줄, 왼쪽부터 impl|critic)과 다름: $detail"
-	warn "고치는 순서: herdr pane move <pane> --new-tab → herdr pane move <pane> --tab <tab> --split right --target-pane <왼쪽 이웃> → 필요 시 herdr pane swap · 남은 빈 탭은 herdr tab close"
+    l=json.load(sys.stdin)["result"]["layout"]
+    r={p["pane_id"]:p["rect"] for p in l["panes"]}
+    splits=l.get("splits") or []
+    tab=l.get("tab_id") or "-"
+except Exception: sys.exit(0)
+def box(q): return (q["x"],q["y"],q["width"],q["height"])
+def ratio(d,b):
+    for s in splits:
+        if s.get("direction")==d and box(s["rect"])==b: return s["ratio"]
+if lead not in r: sys.exit(0)
+if impl not in r: print("away 0 - - "+tab); sys.exit(0)
+crit=1 if critic and critic in r else 0
+L,M=box(r[lead]),box(r[impl])
+C=box(r[critic]) if crit else None
+ok=M[0]==L[0] and M[1]==L[1]+L[3]
+if ok and C: ok=C[0]==M[0]+M[2] and C[1]==M[1] and C[3]==M[3] and M[2]+C[2]==L[2]
+elif ok: ok=M[2]==L[2]
+down=ratio("down",(L[0],L[1],L[2],L[3]+M[3])) if ok else None
+right=ratio("right",(M[0],M[1],M[2]+C[2],M[3])) if ok and C else None
+if down is None or (C and right is None):
+    seats=[b for b in (L,M,C) if b]
+    x0,y0=min(b[0] for b in seats),min(b[1] for b in seats)
+    x1,y1=max(b[0]+b[2] for b in seats),max(b[1]+b[3] for b in seats)
+    tiled=sum(b[2]*b[3] for b in seats)==(x1-x0)*(y1-y0) and any(box(s["rect"])==(x0,y0,x1-x0,y1-y0) for s in splits)
+    print("%s %d - - %s" % ("move" if tiled else "mixed",crit,tab))
+else: print("ok %d %s %s %s" % (crit,down,right if C else "-",tab))' "$1" "$2" "${3:-}"
+}
+
+ratios_ok() { # 아래비율 줄비율("-"이면 보지 않음)
+	python3 -c 'import sys
+d,r,lr,rr=sys.argv[1:5]
+ok=lambda a,b: abs(float(a)-float(b))<=0.01+1e-9
+sys.exit(0 if ok(d,lr) and (r=="-" or ok(r,rr)) else 1)' "$1" "$2" "$LEAD_RATIO" "$ROW_RATIO"
+}
+
+# split 비율을 target으로. 늘릴 때는 첫 pane을 경계 쪽으로, 줄일 때는 둘째 pane을 경계 쪽으로 resize(amount = 비율 차).
+# 반환: 0 손댈 것 없음, 1 resize 실패, 3 resize함
+set_ratio() { # current target first grow_dir second shrink_dir
+	local d
+	d="$(python3 -c 'import sys; d=float(sys.argv[2])-float(sys.argv[1]); print("" if abs(d)<0.005 else "%+.4f" % d)' "$1" "$2")" ||
+		return 1
+	case "$d" in
+	"") return 0 ;;
+	+*) herdr pane resize --pane "$3" --direction "$4" --amount "${d#+}" >/dev/null 2>&1 || return 1 ;;
+	*) herdr pane resize --pane "$5" --direction "$6" --amount "${d#-}" >/dev/null 2>&1 || return 1 ;;
+	esac
+	return 3
+}
+
+# 기준 모양에서 비율만 맞추고, resize했으면 다시 읽어 확인한다. 상태는 layout_state 출력(호출자가 읽은 것).
+# 반환: 0 기준 확인, 1 resize 실패·미도달, 2 기준 모양이 아님(layout 읽기 실패 포함)
+fit_ratios() { # lead impl critic 상태...
+	local lead=$1 impl=$2 critic=$3 fail=0 touched=0 rc
+	shift 3
+	[ "${1:-}" = ok ] || return 2
+	set_ratio "$3" "$LEAD_RATIO" "$lead" down "$impl" up
+	rc=$?
+	case $rc in 1) fail=1 ;; 3) touched=1 ;; esac
+	if [ "$2" = 1 ]; then
+		set_ratio "$4" "$ROW_RATIO" "$impl" right "$critic" left
+		rc=$?
+		case $rc in 1) fail=1 ;; 3) touched=1 ;; esac
+	fi
+	if [ "$touched" = 1 ]; then
+		# shellcheck disable=SC2046
+		set -- $(layout_state "$lead" "$impl" "$critic")
+		[ "${1:-}" = ok ] || { warn "resize 중 배치가 바뀌어 기준 모양이 아님"; return 1; }
+	fi
+	ratios_ok "$3" "$4" || fail=1
+	[ "$fail" = 0 ] || warn "비율 미도달 또는 resize 실패: 팀장/아래 $3$([ "$4" = - ] || echo ", impl/critic $4") (기준 $LEAD_RATIO$([ "$4" = - ] || echo "/$ROW_RATIO") ±0.01)"
+	return "$fail"
+}
+
+# 스크립트가 만든 임시 탭은 남은 pane이 모두 agent 없는 pane(사용자 설정이 자동으로 만든 Sidebar 등)일 때만 닫는다.
+close_temp_tab() { # tab
+	local left
+	left="$(herdr pane list 2>/dev/null | python3 -c 'import sys,json
+try: panes=json.load(sys.stdin)["result"]["panes"]
+except Exception: print("unknown"); sys.exit(0)
+ps=[p for p in panes if p.get("tab_id")==sys.argv[1]]
+print("agent" if any(p.get("agent") for p in ps) else "ok" if ps else "gone")' "$1")"
+	case "$left" in
+	ok) herdr tab close "$1" >/dev/null 2>&1 || warn "임시 탭 $1 을 닫지 못함; herdr tab close $1" ;;
+	gone) ;;
+	*) warn "임시 탭 $1 을 닫지 않고 둠(agent pane이 있거나 목록을 읽지 못함)" ;;
+	esac
+}
+
+# pane을 임시 탭으로 뺐다가 tab의 target 옆(split 방향, target 몫 ratio)으로 되돌린다.
+move_via_temp_tab() { # pane tab target split ratio
+	local tmp
+	tmp="$(herdr pane move "$1" --new-tab --no-focus 2>/dev/null | jget result.move_result.created_tab.tab_id)"
+	[ -n "$tmp" ] || { warn "$1 을 임시 탭으로 옮긴 것을 확인하지 못함; herdr tab list 확인"; return 1; }
+	if [ "$(herdr pane move "$1" --tab "$2" --target-pane "$3" --split "$4" --ratio "$5" --no-focus 2>/dev/null |
+		jget result.move_result.changed)" != True ]; then
+		warn "$1 을 임시 탭 $tmp 에서 $2 로 되돌리지 못함; 직접 옮긴다(herdr pane move $1 --tab $2 --target-pane $3 --split $4)"
+		return 1
+	fi
+	close_temp_tab "$tmp"
+}
+
+# 배치 대상 pane → L_IMPL, L_CRITIC(이 작업공간에 pane이 있는 석만, 없으면 빈 값)
+layout_seats() {
+	L_IMPL=""
+	L_CRITIC=""
+	usable_anchor 1 && L_IMPL="${S_PANE[1]}"
+	usable_anchor 2 && L_CRITIC="${S_PANE[2]}"
+	[ -n "${S_PANE[0]}" ] && [ "${S_INWS[0]}" = 1 ] && [ -n "$L_IMPL" ]
+}
+
+# 팀장(이 pane)·impl이 같은 탭이면 기준으로 맞춘다. critic은 같은 탭일 때만 함께 맞춘다.
+# 반환: 0 맞춤, 1 실패(안내 출력), 4 해당 없음(impl이 다른 탭 — 옮기지 않음)
+apply_layout() {
+	local lead=$HERDR_PANE_ID impl=$L_IMPL critic=$L_CRITIC tab state
+	state="$(layout_state "$lead" "$impl" "$critic")"
+	# shellcheck disable=SC2086
+	set -- $state
+	case "${1:-}" in
+	"")
+		warn "배치: 팀장 탭 layout을 읽지 못함; 아무것도 옮기지 않음"
+		return 1
+		;;
+	away)
+		warn "배치: cf-impl($impl)이 팀장($lead)과 다른 탭에 있어 옮기지 않음; 같은 탭으로 옮긴 뒤 scripts/team-up.sh --layout"
+		return 4
+		;;
+	mixed)
+		warn "배치: 팀 석 사이에 다른 pane이 섞여 있어 옮기지 않음(옮기면 그 pane 크기가 바뀜); 직접 정리한 뒤 scripts/team-up.sh --layout"
+		return 1
+		;;
+	move)
+		tab=$5
+		move_via_temp_tab "$impl" "$tab" "$lead" down "$LEAD_RATIO" || return 1
+		if [ "$2" = 1 ]; then
+			move_via_temp_tab "$critic" "$tab" "$impl" right "$ROW_RATIO" || return 1
+		fi
+		state="$(layout_state "$lead" "$impl" "$critic")"
+		;;
+	esac
+	[ "$2" = 1 ] || critic=""
+	[ -n "$critic" ] || [ -z "$L_CRITIC" ] || warn "배치: cf-critic($L_CRITIC)이 다른 탭에 있어 팀장·impl만 맞춤"
+	# shellcheck disable=SC2086
+	fit_ratios "$lead" "$impl" "$critic" $state
+	case $? in
+	0)
+		echo "배치: 팀장 $lead 위($LEAD_RATIO), 아래 impl $impl${critic:+ | critic $critic($ROW_RATIO)}"
+		return 0
+		;;
+	2) warn "배치: 기준 모양이 되지 않음; herdr pane layout 확인 뒤 scripts/team-up.sh --layout" ;;
+	*) warn "배치: 자리는 맞지만 비율이 기준이 아님; herdr pane layout 확인 뒤 scripts/team-up.sh --layout" ;;
+	esac
+	return 1
+}
+
+# --up·--resume-impl 끝: 배치 실패는 기동 결과를 되돌리지 않고 종료 코드만 비0으로 만든다.
+finish_layout() {
+	local rc
+	layout_seats || return 0
+	apply_layout
+	rc=$?
+	[ "$rc" != 1 ]
+}
+
+# 점검(읽기 전용): 기준과 다르면 경고만 낸다. 종료 코드에 영향 없음.
+check_layout() {
+	local lead="${S_PANE[0]}" fix="고치려면 팀장 pane에서 scripts/team-up.sh --layout"
+	layout_seats || return 0
+	# shellcheck disable=SC2046
+	set -- $(layout_state "$lead" "$L_IMPL" "$L_CRITIC")
+	case "${1:-}" in
+	ok)
+		[ "$2" = 1 ] || [ -z "$L_CRITIC" ] || warn "배치: cf-critic($L_CRITIC)이 팀장과 다른 탭에 있음"
+		ratios_ok "$3" "$4" && return 0
+		warn "배치 비율이 기준과 다름: 팀장/아래 $3$([ "$4" = - ] || echo ", impl/critic $4") (기준 $LEAD_RATIO$([ "$4" = - ] || echo "/$ROW_RATIO") ±0.01)"
+		;;
+	move) warn "배치가 기준(팀장 위, 아래 줄 왼쪽부터 impl|critic)과 다름" ;;
+	mixed)
+		fix="다른 pane을 팀 석 영역 밖으로 직접 옮긴 뒤 scripts/team-up.sh --layout"
+		warn "배치가 기준과 다르고 팀 석 사이에 다른 pane이 섞여 있음"
+		;;
+	away) fix="cf-impl을 팀장 탭으로 옮긴 뒤 scripts/team-up.sh --layout"; warn "배치: cf-impl($L_IMPL)이 팀장과 다른 탭에 있음" ;;
+	*) return 0 ;;
+	esac
+	warn "$fix"
 	return 0
 }
 
@@ -433,8 +605,15 @@ up)
 	secure_lead
 	fail=0
 	for i in 1 2; do ensure_member "$i" "${SEAT_CMD[$i]}" || fail=1; done
-	check_layout
+	finish_layout || fail=1
 	exit "$fail"
+	;;
+layout)
+	[ "${S_STATUS[0]}" = alive ] && [ "${S_PANE[0]}" = "$HERDR_PANE_ID" ] ||
+		die "--layout: cf-lead가 이 pane($HERDR_PANE_ID)이 아니다; 아무것도 옮기지 않음"
+	layout_seats || die "--layout: 이 작업공간에 cf-impl pane이 없다; 아무것도 옮기지 않음(scripts/team-up.sh --up)"
+	apply_layout || exit 1
+	exit 0
 	;;
 resume)
 	case "$resume_id" in *[!0-9A-Fa-f-]*) die "세션 id 형식이 아니다: $resume_id" ;; esac
@@ -446,7 +625,9 @@ resume)
 	conflict) die "cf-impl: ${S_NOTE[1]} (${S_PANE[1]}); 복구하지 않음" ;;
 	esac
 	secure_lead
-	ensure_member 1 "gjc --resume $resume_id --mpreset $IMPL_PRESET"
-	exit
+	fail=0
+	ensure_member 1 "gjc --resume $resume_id --mpreset $IMPL_PRESET" || fail=1
+	finish_layout || fail=1
+	exit "$fail"
 	;;
 esac

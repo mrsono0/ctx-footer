@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """ci/test-team-up.sh 전용 모의 herdr. 실제 Herdr에 연결하지 않는다.
 
-상태: $MOCK_HERDR_STATE (JSON {"panes": [...], "next": N}). pane 목록 순서가 곧 배치 순서다.
+상태: $MOCK_HERDR_STATE (JSON). 키:
+  panes  pane 목록. "name" = agent 이름(agent가 실행 중인 pane에만 붙는다, Herdr와 같음), "tab_id" = 탭.
+  tabs   탭별 분할 트리. 잎 {"p": pane_id}, 분할 {"d": "down"|"right", "r": 첫 자식 몫, "a": 첫 자식, "b": 둘째}.
+         없는 탭은 pane 목록 순서로 만든다: 첫 pane 위(0.6), 나머지는 아래 한 줄 같은 폭.
+  next   새 pane·탭 번호.
+  auto_sidebar  참이면 --new-tab으로 만든 탭에 agent 없는 "Sidebar" pane을 함께 만든다(사용자 설정 재현).
+  auto_pane_agent  위 Sidebar pane에 줄 agent 종류(시험용, 기본 없음).
+  fail   실패시킬 명령 목록(예: ["move"], ["resize"]).
 기록: 모든 호출을 $MOCK_HERDR_LOG 에 한 줄(인자를 탭으로 연결)씩 남긴다.
-pane의 "name" 필드가 agent 이름이다. 이름은 agent가 실행 중인 pane에만 붙는다(Herdr와 같음).
+탭 크기는 100x33(팀장 0.6 → 높이 20).
 """
 import json
 import os
@@ -22,6 +29,8 @@ with open(LOG, "a", encoding="utf-8") as f:
 with open(STATE, encoding="utf-8") as f:
     state = json.load(f)
 panes = state["panes"]
+tabs = state.setdefault("tabs", {})
+W, H = 100, 33
 
 
 def save():
@@ -49,7 +58,7 @@ def opt(name):
 def positional(start):
     """start 이후의 옵션이 아닌 인자들(값을 받는 옵션의 값은 제외)."""
     takes = {"--direction", "--ratio", "--cwd", "--env", "--pane", "--right-click",
-             "--source-pane", "--target-pane", "--amount"}
+             "--source-pane", "--target-pane", "--amount", "--tab", "--split"}
     out, i = [], start
     while i < len(args):
         a = args[i]
@@ -76,10 +85,97 @@ def by_agent(target):
 
 
 def public(p):
-    q = {k: v for k, v in p.items() if k not in ("name", "command")}
-    return q
+    return {k: v for k, v in p.items() if k not in ("name", "command")}
 
 
+def new_id(prefix):
+    n = state.get("next", 1)
+    state["next"] = n + 1
+    return "%s%d" % (prefix, n)
+
+
+# --- 분할 트리 ---
+def leaves(n):
+    return [n["p"]] if "p" in n else leaves(n["a"]) + leaves(n["b"])
+
+
+def replace_leaf(n, pid, new):
+    if "p" in n:
+        return new if n["p"] == pid else n
+    return dict(n, a=replace_leaf(n["a"], pid, new), b=replace_leaf(n["b"], pid, new))
+
+
+def remove_leaf(n, pid):
+    """pid 잎을 빼고 형제를 위로 올린다. 트리가 비면 None."""
+    if "p" in n:
+        return None if n["p"] == pid else n
+    a, b = remove_leaf(n["a"], pid), remove_leaf(n["b"], pid)
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return dict(n, a=a, b=b)
+
+
+def path_to(n, pid, acc=()):
+    """루트부터 pid 잎까지 (분할 노드, 'a'|'b') 목록."""
+    if "p" in n:
+        return list(acc) if n["p"] == pid else None
+    return path_to(n["a"], pid, acc + ((n, "a"),)) or path_to(n["b"], pid, acc + ((n, "b"),))
+
+
+def default_tree(ids):
+    if not ids:
+        return None
+    lead, rest = ids[0], ids[1:]
+    if not rest:
+        return {"p": lead}
+    row = {"p": rest[-1]}
+    for k in range(len(rest) - 2, -1, -1):
+        row = {"d": "right", "r": round(1 / (len(rest) - k), 4), "a": {"p": rest[k]}, "b": row}
+    return {"d": "down", "r": 0.6, "a": {"p": lead}, "b": row}
+
+
+def normalize():
+    in_tree = {}
+    for t, n in tabs.items():
+        for pid in leaves(n):
+            in_tree[pid] = t
+    for p in panes:
+        p["tab_id"] = in_tree.get(p["pane_id"]) or p.get("tab_id") or p["workspace_id"] + ":t1"
+    for t in sorted({p["tab_id"] for p in panes} - set(tabs)):
+        tree = default_tree([p["pane_id"] for p in panes if p["tab_id"] == t])
+        if tree:
+            tabs[t] = tree
+
+
+def rects(n, x, y, w, h, out_p, out_s):
+    if "p" in n:
+        out_p.append((n["p"], {"x": x, "y": y, "width": w, "height": h}))
+        return
+    out_s.append({"direction": n["d"], "ratio": n["r"], "id": "split_%d" % len(out_s),
+                  "rect": {"x": x, "y": y, "width": w, "height": h}})
+    if n["d"] == "down":
+        ha = int(round(h * n["r"]))
+        rects(n["a"], x, y, w, ha, out_p, out_s)
+        rects(n["b"], x, y + ha, w, h - ha, out_p, out_s)
+    else:
+        wa = int(round(w * n["r"]))
+        rects(n["a"], x, y, wa, h, out_p, out_s)
+        rects(n["b"], x + wa, y, w - wa, h, out_p, out_s)
+
+
+def detach(p):
+    """pane을 지금 탭의 트리에서 뺀다. 탭이 비면 탭도 없앤다."""
+    t = p["tab_id"]
+    rest = remove_leaf(tabs[t], p["pane_id"]) if t in tabs else None
+    if rest is None:
+        tabs.pop(t, None)
+    else:
+        tabs[t] = rest
+
+
+normalize()
 cmd = args[:2]
 if cmd == ["pane", "list"]:
     ok("pane_list", "panes", [public(p) for p in panes])
@@ -119,35 +215,98 @@ if cmd == ["pane", "split"]:
     src = by_id(target)
     if not src:
         err("pane_not_found", "pane not found")
-    pid = "%s:n%d" % (src["workspace_id"], state.get("next", 1))
-    state["next"] = state.get("next", 1) + 1
+    pid = new_id(src["workspace_id"] + ":n")
     cwd = opt("--cwd") or src.get("cwd")
-    new = {"pane_id": pid, "workspace_id": src["workspace_id"], "cwd": cwd, "foreground_cwd": cwd,
-           "split_from": target, "split_direction": opt("--direction"), "split_ratio": opt("--ratio")}
+    new = {"pane_id": pid, "workspace_id": src["workspace_id"], "tab_id": src["tab_id"], "cwd": cwd,
+           "foreground_cwd": cwd, "split_from": target, "split_direction": opt("--direction"),
+           "split_ratio": opt("--ratio")}
     panes.insert(panes.index(src) + 1, new)
+    tabs[src["tab_id"]] = replace_leaf(tabs[src["tab_id"]], target, {
+        "d": opt("--direction") or "right", "r": float(opt("--ratio") or 0.5), "a": {"p": target}, "b": {"p": pid}})
     save()
     ok("pane_info", "pane", public(new))
 if cmd == ["pane", "layout"]:
     src = by_id(opt("--pane")) or panes[0]
-    out = []
-    n = 0
-    for p in panes:
-        if p.get("workspace_id") != src.get("workspace_id"):
-            continue
-        rect = {"x": 0, "y": 0, "width": 100, "height": 20} if n == 0 else {"x": 10 * (n - 1), "y": 20, "width": 10, "height": 10}
-        if p.get("ly") is not None:  # mkstate 8번째 필드: y 재정의(배치 어긋남 재현)
-            rect["y"] = p["ly"]
-        out.append({"pane_id": p["pane_id"], "rect": rect})
-        n += 1
-    ok("pane_layout", "layout", {"panes": out})
+    t = src["tab_id"]
+    out_p, out_s = [], []
+    if t in tabs:
+        rects(tabs[t], 0, 0, W, H, out_p, out_s)
+    out = [{"pane_id": pid, "rect": rect} for pid, rect in out_p]
+    ok("pane_layout", "layout", {"tab_id": t, "workspace_id": src["workspace_id"], "panes": out, "splits": out_s})
 if cmd == ["pane", "swap"]:
     a, b = by_id(opt("--source-pane")), by_id(opt("--target-pane"))
     if not a or not b:
         err("pane_not_found", "pane not found")
     ia, ib = panes.index(a), panes.index(b)
     panes[ia], panes[ib] = b, a
+    ta, tb = a["tab_id"], b["tab_id"]
+    tabs[ta] = replace_leaf(tabs[ta], a["pane_id"], {"p": "\0swap"})
+    tabs[tb] = replace_leaf(tabs[tb], b["pane_id"], {"p": a["pane_id"]})
+    tabs[ta] = replace_leaf(tabs[ta], "\0swap", {"p": b["pane_id"]})
+    a["tab_id"], b["tab_id"] = tb, ta
     save()
     ok("pane_swap", "panes", [a["pane_id"], b["pane_id"]])
+if cmd == ["pane", "move"]:
+    if "move" in state.get("fail", []):
+        err("move_failed", "mock move failure")
+    p = by_id(positional(2)[0] if positional(2) else "")
+    if not p:
+        err("pane_not_found", "pane not found")
+    if "--new-tab" in args:
+        detach(p)
+        t = new_id(p["workspace_id"] + ":tm")
+        p["tab_id"] = t
+        tabs[t] = {"p": p["pane_id"]}
+        if state.get("auto_sidebar"):
+            sid = new_id(p["workspace_id"] + ":s")
+            side = {"pane_id": sid, "workspace_id": p["workspace_id"], "tab_id": t, "label": "Sidebar",
+                    "cwd": p.get("cwd"), "foreground_cwd": p.get("cwd")}
+            if state.get("auto_pane_agent"):
+                side.update(agent=state["auto_pane_agent"], agent_status="idle")
+            panes.append(side)
+            tabs[t] = {"d": "right", "r": 0.8, "a": {"p": p["pane_id"]}, "b": {"p": sid}}
+        save()
+        ok("pane_move", "move_result", {"changed": True, "created_tab": {"tab_id": t}})
+    t, target, d = opt("--tab"), opt("--target-pane"), opt("--split")
+    q = by_id(target)
+    if t not in tabs or not q or q["tab_id"] != t:
+        err("pane_not_found", "target pane not in tab")
+    if p["tab_id"] == t:
+        ok("pane_move", "move_result", {"changed": False, "reason": "same_tab"})
+    detach(p)
+    tabs[t] = replace_leaf(tabs[t], target, {"d": d or "right", "r": float(opt("--ratio") or 0.5),
+                                              "a": {"p": target}, "b": {"p": p["pane_id"]}})
+    p["tab_id"] = t
+    save()
+    ok("pane_move", "move_result", {"changed": True})
+if cmd == ["pane", "resize"]:
+    if "resize" in state.get("fail", []):
+        err("resize_failed", "mock resize failure")
+    p = by_id(opt("--pane") or "")
+    if not p:
+        err("pane_not_found", "pane not found")
+    d, amount = opt("--direction"), float(opt("--amount") or 0.05)
+    axis = "down" if d in ("down", "up") else "right"
+    for node, side in reversed(path_to(tabs[p["tab_id"]], p["pane_id"]) or []):
+        if node["d"] != axis:
+            continue
+        if side == "a" and d in ("down", "right"):
+            node["r"] = round(min(0.95, node["r"] + amount), 4)
+        elif side == "b" and d in ("up", "left"):
+            node["r"] = round(max(0.05, node["r"] - amount), 4)
+        else:
+            continue
+        save()
+        ok("pane_resize", "pane", {"pane_id": p["pane_id"]})
+    err("no_split", "no split to resize in that direction")
+if cmd == ["tab", "close"]:
+    t = args[2] if len(args) > 2 else ""
+    if t not in tabs and not any(p["tab_id"] == t for p in panes):
+        err("tab_not_found", "tab not found")
+    tabs.pop(t, None)
+    state["panes"] = [p for p in panes if p["tab_id"] != t]
+    save()
+    ok("tab_closed", "tab", {"tab_id": t})
 if cmd == ["pane", "run"]:
     p = by_id(args[2])
     if not p:
