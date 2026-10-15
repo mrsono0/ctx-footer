@@ -232,7 +232,7 @@ check "split 2회" eq "$(count "pane${T}split")" 2
 check "impl은 팀장 아래(0.6)" eq "$(field "$i" split_from) $(field "$i" split_direction) $(field "$i" split_ratio)" "wN:p1 down 0.6"
 check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" split_direction) $(field "$c" split_ratio)" "$i right 0.500"
 check "배치 impl|critic" eq "$(order)" "$i $c"
-check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-argon-high --sandbox"
+check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-argon-high --mode accept-edits --sandbox"
 check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
 check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "send-text 없음" eq "$(count "send-text")" 0
@@ -488,7 +488,7 @@ mkstate "$LEAD" "$CRITIC"
 run --resume-impl "$RESUME_SID"
 i="$(pane_named cf-impl)"
 check "종료 코드 0" eq "$RC" 0
-check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-argon-high --sandbox"
+check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-argon-high --mode accept-edits --sandbox"
 check "run 1회(impl만)" eq "$(count "pane${T}run")" 1
 check "배치 impl|critic" eq "$(order)" "$i wN:p4"
 check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"

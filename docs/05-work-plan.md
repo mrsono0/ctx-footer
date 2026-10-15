@@ -24,6 +24,7 @@
 - layout-r1(2026-10-14, 팀 환경 보강): GJCH 팀과 합의한 배치 기준을 `scripts/team-up.sh` 기능으로. 사용자 원문 「커밋 승인, 배치 작업도 진행, 덤도 진행」. 새 pane은 기준 자리에 만들고, `--up`·`--resume-impl` 끝과 `--layout`에서 팀장·impl이 같은 탭이면 보정(모양이 맞으면 비율만 resize, 다르면 임시 탭 경유 `pane move --no-focus`). critic은 같은 탭일 때만 함께, 아니면 팀장 0.6/impl 아래만. Sidebar 등 세 석 밖 pane은 옮기거나 크기를 바꾸거나 닫지 않고, 임시 탭은 남은 pane이 모두 agent 없을 때만 닫는다. 배치 실패는 기동을 되돌리지 않고 종료 코드만 비0 + 안내. 점검(인자 없음)은 경고만, `--hook-clear`는 배치를 읽지도 않는다.
 - impl-agy-r1(2026-10-15, 팀 환경): 구현 담당(`cf-impl`)을 GJC에서 `agy --model gemini-4-argon-high --sandbox`로 정식 교체(`AGENTS.md`·`scripts/team-up.sh`·`ci/test-team-up.sh`·`ci/mock/herdr`·`docs/04-team-and-env.md` 반영, `--resume-impl`을 `agy --conversation <id>`로 바꾸고 GJC 전용 `/rename` 처리 제거). 사용자 원문 「2. 교체 승인」.
 - agyrule-r1(2026-10-15, 팀 환경): agy 전역 `toolPermission`을 `proceed-in-sandbox`로 둔 설정과 CF·GJCH 합의 절차(확인창은 lead가 1번만 선택, 2·3번 금지, 전역 `settings.json` 변경 시 팀 간 사전 공지·순차 재기동)를 `AGENTS.md`와 `docs/04-team-and-env.md`에 반영. 사용자 원문 「규칙 반영 승인」.
+- acceptedits-r1(2026-10-15, 팀 환경): 구현 agy(`cf-impl`) 기동·복구 명령에 `--mode accept-edits`를 추가해 `agy --model gemini-4-argon-high --mode accept-edits --sandbox`(복구 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`)로 갱신(`AGENTS.md`·`scripts/team-up.sh`·`ci/test-team-up.sh`·`docs/04-team-and-env.md`). 사용자 원문 「2. 승인」.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.

@@ -3,7 +3,7 @@
 #   scripts/team-up.sh                      점검만: 세 석의 pane·agent·상태 표 출력(변경 없음)
 #                                           종료 코드 0 = 세 석 모두 살아 있음, 1 = 아니거나 오류
 #   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
-#   scripts/team-up.sh --resume-impl <id>   구현 agy를 `agy --conversation <id> --model … --sandbox`로 복구한다
+#   scripts/team-up.sh --resume-impl <id>   구현 agy를 `agy --conversation <id> --model … --mode accept-edits --sandbox`로 복구한다
 #   scripts/team-up.sh --layout             팀장 pane에서: 기존 세 석을 배치 기준(팀장 위 0.6, 아래 줄 impl|critic 반반)으로 맞춘다
 #   scripts/team-up.sh --hook-clear         SessionStart(clear) 훅 전용: 팀장 pane에 cf-lead 이름을 다시 붙인다
 # 다른 pane이 쓰는 이름은 건드리지 않는다. 살아 있는 팀원은 재생성하지 않는다.
@@ -19,7 +19,7 @@ SEAT_KIND=(claude agy codex) # Herdr가 감지하는 agent 종류
 SEAT_LABEL=("CF 팀장 · Claude" "CF 구현 · agy" "CF 검토 · Codex")
 SEAT_CMD=(
 	"" # 팀장은 사람이 이 pane에서 띄운다. 스크립트는 팀장을 실행하지 않는다.
-	"agy --model $IMPL_MODEL --sandbox"
+	"agy --model $IMPL_MODEL --mode accept-edits --sandbox"
 	'codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"'
 )
 LEAD_RATIO=0.6                       # 배치 기준: 팀장(위) pane이 차지하는 세로 비율
@@ -649,7 +649,7 @@ resume)
 	esac
 	secure_lead
 	fail=0
-	ensure_member 1 "agy --conversation $resume_id --model $IMPL_MODEL --sandbox" || fail=1
+	ensure_member 1 "agy --conversation $resume_id --model $IMPL_MODEL --mode accept-edits --sandbox" || fail=1
 	finish_layout || fail=1
 	exit "$fail"
 	;;
