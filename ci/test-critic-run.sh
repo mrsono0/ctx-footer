@@ -18,6 +18,7 @@ if [ "$(command -v codex)" != "$MOCK_DIR/codex" ]; then
 fi
 
 LOG="$TMP/codex-calls.log"
+ENV_LOG="$TMP/codex-env.log"
 ROUND="$TMP/round"
 FROZEN="$TMP/frozen"
 mkdir -p "$ROUND" "$FROZEN"
@@ -45,9 +46,11 @@ has() { grep -qF -- "$1" <<<"$2"; }
 # 1. 정상 실행: 인자 구성·쓰기 경계 설정·VERDICT 파일 경로·종료 코드 0
 CASE="정상 실행(APPROVE)"
 : >"$LOG"
-OUT="$(MOCK_CODEX_LOG="$LOG" "$CRITIC_RUN_BASH" "$SCRIPT" "$ROUND" "$FROZEN" 2>&1)"
+: >"$ENV_LOG"
+OUT="$(MOCK_CODEX_LOG="$LOG" MOCK_CODEX_ENV_LOG="$ENV_LOG" "$CRITIC_RUN_BASH" "$SCRIPT" "$ROUND" "$FROZEN" 2>&1)"
 RC=$?
 CALL="$(cat "$LOG")"
+ENV_VAL="$(tr -d '\r\n' <"$ENV_LOG")"
 check "종료 코드 0" eq "$RC" 0
 check "exec 서브커맨드" has $'exec\t' "$CALL"
 check "모델 gpt-6.1-sol" has $'\t-m\tgpt-6.1-sol\t' "$CALL"
@@ -57,6 +60,9 @@ check "TMPDIR 쓰기 제외" has $'\t-c\tsandbox_workspace_write.exclude_tmpdir_
 check "추가 writable_roots 빈 배열" has $'\t-c\tsandbox_workspace_write.writable_roots=[]\t' "$CALL"
 check "sandbox workspace-write" has $'\t-s\tworkspace-write\t' "$CALL"
 check "작업 디렉터리 -C 동결 사본" has $'\t-C\t'"$FROZEN_REAL"$'\t' "$CALL"
+check "임시 디렉터리 --add-dir 전달" has $'\t--add-dir\t'"$ROUND_REAL/tmp"$'\t' "$CALL"
+check "TMPDIR 환경변수 전달" eq "$ENV_VAL" "$ROUND_REAL/tmp"
+check "회차 tmp 디렉터리 생성됨" test -d "$ROUND_REAL/tmp"
 check "--json 플래그" has $'\t--json\t' "$CALL"
 check "-o VERDICT 경로" has $'\t-o\t'"$ROUND_REAL/VERDICT.md"$'\t' "$CALL"
 check "위험 플래그(--yolo/danger) 없음" "$CRITIC_RUN_BASH" -c '! grep -qE -- "--yolo|danger" "$1"' _ "$LOG"
@@ -89,6 +95,21 @@ ROOT_PARENT="$(cd "$ROOT/.." && pwd -P)"
 OUT="$(MOCK_CODEX_LOG="$LOG" "$CRITIC_RUN_BASH" "$SCRIPT" "$ROUND" "$ROOT_PARENT" 2>&1)"
 RC=$?
 check "종료 코드 1" eq "$RC" 1
+check "codex 호출 없음" test ! -s "$LOG"
+
+# 5. 안전 가드: 회차 폴더나 tmp가 저장소·상위 경로를 가리키면 거부
+CASE="회차 상위 경로 및 tmp 심볼릭 링크 거부"
+: >"$LOG"
+OUT="$(MOCK_CODEX_LOG="$LOG" "$CRITIC_RUN_BASH" "$SCRIPT" "$ROOT_PARENT" "$FROZEN" 2>&1)"
+RC=$?
+check "상위 회차 폴더 종료 코드 1" eq "$RC" 1
+ROUND_SYM="$TMP/round-sym"
+mkdir -p "$ROUND_SYM"
+echo "# test request" >"$ROUND_SYM/REQUEST.md"
+ln -s "$ROOT" "$ROUND_SYM/tmp"
+OUT="$(MOCK_CODEX_LOG="$LOG" "$CRITIC_RUN_BASH" "$SCRIPT" "$ROUND_SYM" "$FROZEN" 2>&1)"
+RC=$?
+check "저장소 가리키는 tmp 종료 코드 1" eq "$RC" 1
 check "codex 호출 없음" test ! -s "$LOG"
 
 # shellcheck disable=SC2016

@@ -3,6 +3,7 @@
 
 환경변수:
   MOCK_CODEX_LOG      호출 인자를 탭으로 구분해 기록할 파일 경로(필수)
+  MOCK_CODEX_ENV_LOG  전달된 TMPDIR 환경변수를 기록할 파일 경로(선택)
   MOCK_CODEX_RC       종료 코드(기본 0)
   MOCK_CODEX_VERDICT  -o 파일에 쓸 첫 줄(기본 "VERDICT: APPROVE")
 """
@@ -18,6 +19,11 @@ if not log_path:
 args = sys.argv[1:]
 with open(log_path, "a", encoding="utf-8") as f:
     f.write("\t".join(args) + "\n")
+
+env_log_path = os.environ.get("MOCK_CODEX_ENV_LOG")
+if env_log_path:
+    with open(env_log_path, "a", encoding="utf-8") as f:
+        f.write(os.environ.get("TMPDIR", "") + "\n")
 
 rc = int(os.environ.get("MOCK_CODEX_RC", "0"))
 verdict = os.environ.get("MOCK_CODEX_VERDICT", "VERDICT: APPROVE")

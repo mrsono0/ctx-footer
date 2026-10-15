@@ -2,12 +2,12 @@
 # ctx-footer critic 비대화형 1회차 실행기 (docs/05 critic-exec-r1).
 #   scripts/critic-run.sh <회차 폴더> <동결 사본 경로>
 # 입력: <회차 폴더>/REQUEST.md, <동결 사본 경로>(저장소 밖·상위 경로 제외)
-# 출력: <회차 폴더>/VERDICT.md(-o), <회차 폴더>/events.jsonl(--json), 한 줄 요약(종료 코드·VERDICT 첫 줄·걸린 시간)
+# 출력: <회차 폴더>/VERDICT.md(-o), <회차 폴더>/events.jsonl(--json), <회차 폴더>/tmp(TMPDIR·--add-dir), 한 줄 요약
 set -u
 
 CRITIC_MODEL="gpt-6.1-sol"
 CRITIC_REASONING='model_reasoning_effort="high"'
-# workspace-write + /tmp·TMPDIR·writable_roots 제외 설정으로 쓰기 루트를 동결 사본(-C)으로만 좁힌다(danger-full-access·--yolo 금지).
+# workspace-write + /tmp·TMPDIR·writable_roots 제외 설정으로 쓰기 루트를 동결 사본(-C)과 <회차>/tmp(--add-dir)로만 좁힌다(danger-full-access·--yolo 금지).
 CRITIC_SANDBOX="workspace-write"
 
 usage() {
@@ -30,10 +30,16 @@ is_subpath() { case "${1%/}/" in "${2%/}"/*) return 0 ;; esac; return 1; }
 is_subpath "$FROZEN_DIR" "$ROOT" && die "동결 사본($FROZEN_DIR)이 저장소($ROOT) 안이다; 거부"
 is_subpath "$ROOT" "$FROZEN_DIR" && die "동결 사본($FROZEN_DIR)이 저장소($ROOT)를 포함하는 상위 경로다; 거부"
 is_subpath "$ROUND_DIR" "$ROOT" && die "회차 폴더($ROUND_DIR)가 저장소($ROOT) 안이다; 거부"
+is_subpath "$ROOT" "$ROUND_DIR" && die "회차 폴더($ROUND_DIR)가 저장소($ROOT)를 포함하는 상위 경로다; 거부"
 
 REQUEST_FILE="$ROUND_DIR/REQUEST.md"
 [ -f "$REQUEST_FILE" ] || die "REQUEST.md가 없다: $REQUEST_FILE"
 command -v codex >/dev/null || die "codex 명령이 없다"
+
+mkdir -p "$ROUND_DIR/tmp" || die "임시 폴더 생성 실패: $ROUND_DIR/tmp"
+ROUND_TMP="$(cd "$ROUND_DIR/tmp" && pwd -P)" || die "임시 폴더 경로 확인 실패: $ROUND_DIR/tmp"
+is_subpath "$ROUND_TMP" "$ROOT" && die "임시 폴더($ROUND_TMP)가 저장소($ROOT) 안이다; 거부"
+is_subpath "$ROOT" "$ROUND_TMP" && die "임시 폴더($ROUND_TMP)가 저장소($ROOT)를 포함하는 상위 경로다; 거부"
 
 VERDICT_FILE="$ROUND_DIR/VERDICT.md"
 EVENTS_FILE="$ROUND_DIR/events.jsonl"
@@ -43,7 +49,7 @@ rm -f "$VERDICT_FILE"
 PROMPT="$REQUEST_FILE 를 읽고 동결 사본($FROZEN_DIR)만 점검해 판정하라. herdr 전송은 하지 말고 판정 전문을 최종 메시지로 출력하라. 첫 줄은 반드시 VERDICT: APPROVE | APPROVE_WITH_CHANGES | REJECT 형식이어야 한다."
 
 SECONDS=0
-codex exec \
+TMPDIR="$ROUND_TMP" codex exec \
 	--disable worktrees \
 	--skip-git-repo-check \
 	-m "$CRITIC_MODEL" \
@@ -53,6 +59,7 @@ codex exec \
 	-c 'sandbox_workspace_write.writable_roots=[]' \
 	-s "$CRITIC_SANDBOX" \
 	-C "$FROZEN_DIR" \
+	--add-dir "$ROUND_TMP" \
 	--json \
 	-o "$VERDICT_FILE" \
 	"$PROMPT" >"$EVENTS_FILE" 2>"$STDERR_FILE"
