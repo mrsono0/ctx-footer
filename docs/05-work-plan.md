@@ -16,6 +16,7 @@
 | P6 | 상시 적용 | GitHub 마켓플레이스 user scope 설치(M2 결정) | **전역 설정 변경** 원문 | **완료** 2026-10-11(설치 0.1.0, 기록은 이 문서 커밋) |
 | — | 릴리스 | version 올림 + 태그(`v0.1.0`, M1 결정) + 푸시 | 버전 커밋·태그·푸시 원문 | **완료** `v0.1.0`(대상 커밋 `fbb8eab`) |
 | 운영 | 배치 기준(team-up) | `scripts/team-up.sh` 배치 기준(팀장 위 0.6, 아래 줄 impl\|critic 0.5, ±0.01)·`--layout`·`--up`/`--resume-impl` 끝 보정·모의 테스트 185/185 | 커밋 | **완료** `36e7a49`·`868cfa4`·`5a082b2`(실화면 `--layout`·`--resume-impl` cf-lead 확인) |
+| 운영 | critic exec 시험 | `scripts/critic-run.sh`·`ci/test-critic-run.sh`·`ci/mock/codex`(모의 23/23)·실제 1회 실행 비교(판정 파일·완료 이벤트·첫 줄 일치 확인, 사본 기준본 부재로 TUI와 동등한 전체 diff 검증 범위까지는 미확인) | 커밋(규칙 채택은 별도) | **시험 완료**(커밋 대기) |
 
 (P7 공개 배포는 폐지 — 구조는 P3가, 첫 설치·공개는 P6이 담당하고 남은 절차만 아래 「릴리스」로 둔다.)
 
@@ -26,6 +27,7 @@
 - agyrule-r1(2026-10-15, 팀 환경): agy 전역 `toolPermission`을 `proceed-in-sandbox`로 둔 설정과 CF·GJCH 합의 절차(확인창은 lead가 1번만 선택, 2·3번 금지, 전역 `settings.json` 변경 시 팀 간 사전 공지·순차 재기동)를 `AGENTS.md`와 `docs/04-team-and-env.md`에 반영. 사용자 원문 「규칙 반영 승인」.
 - acceptedits-r1(2026-10-15, 팀 환경): 구현 agy(`cf-impl`) 기동·복구 명령에 `--mode accept-edits`를 추가해 `agy --model gemini-4-argon-high --mode accept-edits --sandbox`(복구 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`)로 갱신(`AGENTS.md`·`scripts/team-up.sh`·`ci/test-team-up.sh`·`docs/04-team-and-env.md`). 사용자 원문 「2. 승인」.
 - closeopen-r1(2026-10-15, 문서 정리): 결정상 더 관찰하지 않기로 한 미확인 2건(U5 데스크톱 표면, U1 엔진 자체 라벨 병렬 모양)을 `docs/05`·`06`·`07`에서 **닫음**(관찰 없이 종결, 실제 모양은 관찰하지 않음)으로 정리. 사용자 원문 「닫기로 한것은 명확하게 닫기 처리를 합니다.」.
+- critic-exec-r1(2026-10-15, 운영 시험): critic 리뷰를 비대화형 `codex exec` 회차 실행기(`scripts/critic-run.sh`, `-m gpt-6.1-sol -c model_reasoning_effort="high" -s workspace-write` + `/tmp`·`TMPDIR`·`writable_roots` 제외 `-C <동결 사본> --json -o <회차>/VERDICT.md`, 저장소 하위·상위 경로 `-C` 거부)로 시험. 모의 테스트 23/23(`ci/test-critic-run.sh`·`ci/mock/codex`) 및 기존 `ci/test-team-up.sh` 185/185 통과. `closeopen-r1` 동결 입력 복사본으로 실제 1회 실행 시 종료 코드 0·58초·`turn.completed`·첫 줄 `VERDICT: APPROVE`(TUI 판정 첫 줄과 일치, 입력 토큰 263,372; 단 복사한 `REQUEST.md`가 기존 `/tmp/cf-closeopen-r1-review/` 경로를 가리키고 사본에 Git 비교 기준본이 없어 전체 diff·다른 파일 무변경 독립 대조 등 TUI와 동등한 검토 범위까지는 입증하지 않음). `--search` 미지원·승인 요청 발생 시 동작·OS 쓰기 차단은 미확인으로 두고 `AGENTS.md`·`scripts/team-up.sh`는 바꾸지 않음. 사용자 원문 「3번 critic exec runner 시험 진행해」.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.
