@@ -25,6 +25,7 @@
 - impl-agy-r1(2026-10-15, 팀 환경): 구현 담당(`cf-impl`)을 GJC에서 `agy --model gemini-4-argon-high --sandbox`로 정식 교체(`AGENTS.md`·`scripts/team-up.sh`·`ci/test-team-up.sh`·`ci/mock/herdr`·`docs/04-team-and-env.md` 반영, `--resume-impl`을 `agy --conversation <id>`로 바꾸고 GJC 전용 `/rename` 처리 제거). 사용자 원문 「2. 교체 승인」.
 - agyrule-r1(2026-10-15, 팀 환경): agy 전역 `toolPermission`을 `proceed-in-sandbox`로 둔 설정과 CF·GJCH 합의 절차(확인창은 lead가 1번만 선택, 2·3번 금지, 전역 `settings.json` 변경 시 팀 간 사전 공지·순차 재기동)를 `AGENTS.md`와 `docs/04-team-and-env.md`에 반영. 사용자 원문 「규칙 반영 승인」.
 - acceptedits-r1(2026-10-15, 팀 환경): 구현 agy(`cf-impl`) 기동·복구 명령에 `--mode accept-edits`를 추가해 `agy --model gemini-4-argon-high --mode accept-edits --sandbox`(복구 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`)로 갱신(`AGENTS.md`·`scripts/team-up.sh`·`ci/test-team-up.sh`·`docs/04-team-and-env.md`). 사용자 원문 「2. 승인」.
+- closeopen-r1(2026-10-15, 문서 정리): 결정상 더 관찰하지 않기로 한 미확인 2건(U5 데스크톱 표면, U1 엔진 자체 라벨 병렬 모양)을 `docs/05`·`06`·`07`에서 **닫음**(관찰 없이 종결, 실제 모양은 관찰하지 않음)으로 정리. 사용자 원문 「닫기로 한것은 명확하게 닫기 처리를 합니다.」.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.
@@ -127,8 +128,8 @@
 | M3 | **닫음**: bunx 고정 TypeScript `7.0.2`(npm 배포 2026-07-08, 안정판) | `scripts/dev-check.sh`와 같은 값. P3에서 bunx 동작 확인(2026-10-11) |
 | M4 | **결정**: README 한글 | 같은 원문(공개 저장소) |
 | M5 | **닫음**: 폭 기준 전환값 `WIDE_COLUMNS = 96` | P5(docs/07) — 가장 긴 모드 힌트(accept edits)에서 최대 라벨 22칸 한 줄 최소 폭 94(계산) + 여유 2, 96·95 경계 실측 |
-| U1 연결자 | **닫음**(연결 모양): `modes` 항목 사이 ` & `, 같은 흐린 색, 오른쪽 끝 | docs/07 「남은 관찰 정리」 U1(2026-10-14) — 사본 계측 라벨로 관찰. 엔진 라벨(`memory paused`·`account memory: …`)은 띄우는 조건을 못 찾아 미확인(전역 설정 변경 시도 안 함) |
-| U5 데스크톱 | **유지**(사용자 결정으로 건너뜀, 미확인): 데스크톱 표면 잘림 모양 | 앱 2.19675.0 있음(2026-10-14). GUI라 터미널에서 관찰 불가 → 사용자 원문 「2. 건너띔」(2026-10-14)으로 화면 확인 안 함(docs/07 U5) |
+| U1 연결자 | **닫음**(연결 모양): `modes` 항목 사이 ` & `, 같은 흐린 색, 오른쪽 끝 | docs/07 「남은 관찰 정리」 U1(2026-10-14) — 사본 계측 라벨로 관찰. 엔진 자체 라벨(`memory paused`·`account memory: …`) 병렬 모양도 **닫음**(2026-10-15, 관찰 없이 종결 — 사용자 원문 「닫기로 한것은 명확하게 닫기 처리를 합니다.」. 띄우는 조건 미발견, 전역 설정 변경 시도 안 함) — 실제 모양은 관찰하지 않았다 |
+| U5 데스크톱 | **닫음**(2026-10-15, 관찰 없이 종결 — 사용자 원문 「닫기로 한것은 명확하게 닫기 처리를 합니다.」. 앞선 결정 2026-10-14 「2. 건너띔」): 데스크톱 표면 잘림 모양 — 실제 모양은 관찰하지 않았다 | 앱 2.19675.0 있음(2026-10-14). GUI라 터미널에서 관찰 불가 → 앞선 결정 사용자 원문 「2. 건너띔」(2026-10-14)에 이어 사용자 원문 「닫기로 한것은 명확하게 닫기 처리를 합니다.」(2026-10-15)로 관찰 없이 종결(docs/07 U5) |
 | D-7 실패 경로 | **닫음**: 그리기 훅 throw → 엔진이 건너뛰고 기본 그림, 알림 1건, 세션 정상 | docs/07 「남은 관찰 정리」 D-7(2026-10-14, 사본 의도 실패 시험) |
 | U3 이벤트 시점 | **닫음**(이번 시험 세션 1회): 첫 응답 전 빈 context measure 누적 1회, 관측한 응답 3회마다 +1, 수동 `/compact` 진행 중·완료 뒤·30초 뒤까지 증가 없음(다음 응답 뒤 +1) | docs/07 「남은 관찰 정리」 U3(2026-10-14, 사본 이벤트 계측) |
 
