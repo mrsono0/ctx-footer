@@ -25,7 +25,7 @@
 |---|---|---|---|
 | 사용자 | — | 요구·범위, 계획 확정, 커밋·태그·릴리스, 규칙·전역 설정 변경 승인(승인된 커밋의 `main` 푸시는 cf-lead에 위임) | — |
 | `cf-lead` 팀장 (Claude Code) | `claude` (opus) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
-| `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --sandbox` (sandbox 켬·기본 권한 모드 — `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
+| `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --sandbox` (sandbox 켬 — 셸 승인 정책은 agy 전역 설정 `~/.gemini/antigravity-cli/settings.json`의 `"toolPermission": "proceed-in-sandbox"`(sandbox 안 명령은 자동, 밖 실행은 확인창 — 사용자 승인 2026-10-15). `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
 | `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
 
 - 모두 이 저장소에서 실행한다. herdr 작업공간 화면은 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`. 기동·복구는 `scripts/team-up.sh`.
@@ -72,7 +72,7 @@
 - **보내기 전에 받는 쪽 입력란을 본다**: `herdr pane read <pane> --source visible --format ansi`. Claude Code는 구분선 사이 `❯` 행, Codex는 `›` 행, agy는 구분선 사이 `>` 행이며, 흐린 글씨(SGR 2) 추천 문구는 빈 것이다. 글이 있으면 사람이 치는 중이니 10초쯤 기다렸다 다시 보고, 1분이 지나도 차 있거나 확인할 수 없으면 보내지 말고 자기 창에 한 줄로 남긴다(받는 쪽이 읽어 간다).
 - Claude Code·Codex·agy에게: `herdr agent prompt <이름> "<메시지>"`.
 - **cf-critic에 새 요청(리뷰 회차·조사)을 보낼 때마다 먼저 컨텍스트를 초기화한다**(사용자 결정 2026-10-11): critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`. 이유는 독립성 — 이전 회차·우리 설명을 기억하면 같은 시각에 끌려가 같은 것을 놓친다. 그래서 요청서는 그 자체로 완결한다: 2회차부터는 이전 지적 목록·근거 경로·해시를 싣고 기억에 기대지 않는다. 같은 회차 안의 되묻기(`ASK`/`ANSWER`)는 초기화하지 않는다.
-- 구현 agy가 작업 중일 때 보낸 입력이 어떻게 처리되는지는 미확인이다. 작업 중인 agy에는 지금 반영돼야 하는 것(교정·`STOP`)만 보내고, 다음 배정은 `idle`·`done`이 된 뒤 보낸다. agy의 동작별 권한 확인은 lead가 내용을 읽고 1회 허용으로만 답한다(아래 대화상자 규칙).
+- 구현 agy가 작업 중일 때 보낸 입력이 어떻게 처리되는지는 미확인이다. 작업 중인 agy에는 지금 반영돼야 하는 것(교정·`STOP`)만 보내고, 다음 배정은 `idle`·`done`이 된 뒤 보낸다. agy 확인창은 lead가 명령 원문을 읽고 1번(이번만 허용)으로만 답한다. 2번(이 대화 동안 접두어 허용)·3번(settings.json에 영구 저장)은 고르지 않는다 — 필요하면 사용자에게 묻고, 3번은 모든 agy가 함께 쓰는 파일이라 원칙상 쓰지 않는다(CF·GJCH 합의 2026-10-15). sandbox 밖이 필요한 명령(예: `/opt/local/bin/bash` 테스트)은 1회 허용으로 처리하고, sandbox 안에서 도는 경로(`/bin/bash`)가 있으면 그쪽을 쓴다. sandbox 허용 경로는 넓히지 않는다.
 - 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
 - 팀원 메시지는 받는 쪽 입력창에 사용자 입력처럼 들어온다. 권위 1을 적용한다.
 - **권한·승인 대화상자**: 팀원은 다른 팀원의 대화상자에 답하지 않고 lead에 `BLOCKER`. lead는 내용을 읽고 판단한다 — 읽기 전용·팀 내부 전송·동결 사본의 테스트처럼 범위가 좁은 것은 1회 허용으로 답하고, 영구 허용(「don't ask again」 등 전역에 저장될 수 있는 것)·「사용자 승인」 항목·전역 설정·되돌리기 어려운 것은 사용자에게 묻는다.
@@ -97,6 +97,7 @@
 - cf-critic이 저장소를 바꾸면(`git status`로 확인) 본 팀원이 즉시 `STOP`을 보내고 cf-lead에 알린다.
 - 금지: `brew install`, `launchctl`, `git push --force`, 부모 프로세스 kill, agy·GJC·Codex·herdr·Claude Code 본체 수정.
 - **전역 설정**(`~/.claude/settings.json`, `~/.codex/`, `~/.gjc/`, `~/.antigravity*`·`~/.gemini/`, 전역 플러그인 설치 등) **변경은 사용자 승인 후 lead만** 한다. 변경 전 백업하고 되돌리는 방법을 함께 보고한다.
+- **agy 전역 설정**(`~/.gemini/antigravity-cli/settings.json`)은 이 머신의 모든 agy(다른 팀 포함)가 함께 쓰고, 떠 있는 agy가 파일 전체를 자기 메모리 상태로 다시 쓸 수 있다(2026-10-15 lfai-lead 관측). 바꿀 때는 ① 변경 주체가 다른 팀장에게 미리 알리고 ② 각 팀장이 자기 agy만 종료했음을 확인한 뒤 ③ 변경 주체가 그 키만 백업·변경하고 ④ 각 팀이 다시 띄운 뒤 ⑤ 마지막 재기동이 끝나면 변경 주체가 값을 다시 읽어 공유한다(다른 팀 agy는 그 팀장이 끄고 띄운다). 폴더 신뢰 응답도 이 파일을 쓰므로 최신 값으로 뜬 agy에서만 답한다.
 - mod 시험은 시험 세션(새 pane, `claude --plugin-dir <폴더>`)에서만 한다. 실사용 세션·전역 설정은 건드리지 않는다.
 - Claude Code mod API·플러그인 동작은 번들 타입 정의와 공식 문서로 먼저 확인한다(근거 표기는 docs/02 방식).
 - 비밀 값은 열람·출력하지 않는다(`env`·`printenv` 덤프 금지).
