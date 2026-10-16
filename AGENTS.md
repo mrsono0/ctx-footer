@@ -24,13 +24,15 @@
 | 이름 | 실행 | 맡는 일 | 하지 않는 일 |
 |---|---|---|---|
 | 사용자 | — | 요구·범위, 계획 확정, 커밋·태그·릴리스, 규칙·전역 설정 변경 승인(승인된 커밋의 `main` 푸시는 cf-lead에 위임) | — |
-| `cf-lead` 팀장 (Claude Code) | `claude` (opus) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
+| `cf-lead` 팀장 (Claude Code) | `claude` (opus) — Herdr 안 pane 또는 Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
 | `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` (파일 편집은 확인 없이 — 사용자 승인 2026-10-15 「2. 승인」, GJCH 시험 근거. sandbox 켬 — 셸 승인 정책은 agy 전역 설정 `~/.gemini/antigravity-cli/settings.json`의 `"toolPermission": "proceed-in-sandbox"`(sandbox 안 명령은 자동, 밖 실행은 확인창 — 사용자 승인 2026-10-15). `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
 | `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
 
-- 모두 이 저장소에서 실행한다. herdr 작업공간 화면은 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`. 기동·복구는 `scripts/team-up.sh`.
+- 모두 이 저장소에서 실행한다. 기동·복구는 `scripts/team-up.sh`(외부 팀장은 `CF_EXTERNAL_LEAD=1 scripts/team-up.sh …`).
+- **팀장 세션은 하나다.** Herdr 안 `cf-lead` pane(화면 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`) 또는 외부 팀장(herdr 작업공간에는 팀원만 좌우 `cf-impl | cf-critic`). 이관 중 두 세션이 함께 있으면 사용자가 정한 쪽만 팀원에게 입력하고, 다른 쪽은 읽기만 한다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀장이 아니다 — 팀원에게 어떤 입력도 하지 않는다.
+- 외부 팀장의 데스크톱 설정(worktree 끄기, 환경변수, herdr 명령 권한)은 사용자가 한다. 폴더 신뢰 창은 사용자가 답한다. `CF_EXTERNAL_LEAD=1`은 데스크톱 「로컬 환경」 설정이라 같은 환경으로 연 다른 데스크톱 세션도 받는다. 그래서 `team-up.sh` 외부 모드는 처음 쓴 세션을 `.local/team/external-lead`에 기록하고, 다른 세션이면 바꾸는 명령을 거부한다. 기록을 다른 세션으로 바꾸는 `--claim-external`은 사용자 승인 뒤에만 쓴다.
 - agent 이름은 herdr 전역이다. 접두어 `cf-`만 쓰고 다른 팀(`lfi-`·`lfai-` 등)의 pane·이름은 건드리지 않는다. 주소는 agent 이름으로 쓰고 pane ID는 `herdr agent list`로 확인한다(재시작 때 바뀐다).
-- **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다.
+- 팀장 세션을 시작·재개하면 먼저 `scripts/team-up.sh` 점검을 돌린다 — 팀원 실행 옵션도 비교하므로(Herdr 재시작·재부팅 뒤 옵션이 빠진 복구) `↳ 옵션 불일치`·`↳ 옵션 판정 불가`가 나오면 일보다 복구가 먼저다. **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
 - 팀원에게 worktree를 주지 않는다. 같은 파일을 두 명이 동시에 쓰지 않는다.
 - **규칙·권한 파일(이 파일, `CLAUDE.md`, `.claude/settings.json`, `.codex/rules/`)은 구현자가 작성하지 않는다.** 팀장 초안 또는 critic 수정안을 구현자가 그대로 반영만 하고, 리뷰에 "구현자에게 유리하게 바꾸는가"를 고정 질문으로 둔다.
 
@@ -47,7 +49,7 @@
 | 조사·문서 확인 | **누구나** → critic | critic은 사실마다 출처 URL(또는 `파일:줄`)과 원문 인용 한 문장. 인용할 수 없으면 「자료 없음」. 핵심 인용은 cf-lead가 원문과 대조한 뒤 사실로 쓴다 |
 | 리뷰 | impl → critic **직접** | impl이 동결 사본을 만들어 요청하고, 지적 반영·재요청을 회차 상한까지 스스로 돌린다 |
 | 반론·질문 | critic ↔ impl | 근거가 부족하면 되묻는다. 계획 밖 작업은 시작 전에 lead에 `ASK` |
-| 완료 보고 | impl → lead | critic `APPROVE`(또는 상한 도달) 뒤 한 번만 |
+| 완료 보고 | impl → lead | critic `APPROVE`(또는 상한 도달) 뒤 한 번만. 보고 경로는 §5 「팀원 → 팀장」 |
 | 사용자 소통 | lead만 | 팀원은 사용자에게 직접 승인을 구하지 않는다. 필요하면 lead에 `NEED-APPROVAL` |
 
 ### 4. 메시지 형식
@@ -69,13 +71,16 @@
 - `REPORT`에는 바뀐 파일·sha256, 실행한 검증과 결과(돌리지 않은 것은 「미확인」), critic 판정 요약, 남은 항목, 다음 행동을 넣는다.
 
 ### 5. 전달 방법
-- **보내기 전에 받는 쪽 입력란을 본다**: `herdr pane read <pane> --source visible --format ansi`. Claude Code는 구분선 사이 `❯` 행, Codex는 `›` 행, agy는 구분선 사이 `>` 행이며, 흐린 글씨(SGR 2) 추천 문구는 빈 것이다. 글이 있으면 사람이 치는 중이니 10초쯤 기다렸다 다시 보고, 1분이 지나도 차 있거나 확인할 수 없으면 보내지 말고 자기 창에 한 줄로 남긴다(받는 쪽이 읽어 간다).
-- Claude Code·Codex·agy에게: `herdr agent prompt <이름> "<메시지>"`.
+- **보내기 전에 받는 쪽 입력란을 본다**: `herdr pane read <pane> --source visible --format ansi`. Claude Code는 구분선 사이 `❯` 행, Codex는 `›` 행, agy는 구분선 사이 `>` 행이며, 흐린 글씨(SGR 2) 추천 문구는 빈 것이다. 글이 있으면 사람이 치는 중이니 10초쯤 기다렸다 다시 보고, 1분이 지나도 차 있거나 확인할 수 없으면 보내지 말고 자기 창에 한 줄로 남긴다(받는 쪽이 읽어 간다). 받는 pane이 포커스(`herdr pane get`의 `focused: true`)면 사용자가 그 pane을 보고 있는 것이니 10초 간격으로 최대 60초 기다리고, 그래도 포커스면 보내지 않는다 — 팀장은 사용자에게 알리고, 팀원은 자기 창에 한 줄 남긴다. 팀장은 사용자의 포커스를 옮기지 않는다.
+- 팀장 → 팀원, 팀원 ↔ 팀원: `herdr agent prompt <이름> "<메시지>"`.
+- **팀원 → 팀장**(외부 팀장은 herdr agent가 아니라 `herdr agent prompt cf-lead`가 닿지 않는다 — Herdr 안 팀장일 때도 같은 방식으로 통일): 팀원은 `herdr agent prompt cf-lead`를 쓰지 않는다. 메시지 본문을 회차 폴더(`/tmp/cf-<회차ID>/`)의 `to-lead/<두 자리 순번>-<유형>.md`에 쓰고, 자기 창에 머리말 한 줄 `[보내는이→cf-lead] <유형> <회차ID>: <파일 경로> (sha256 앞 16자)`만 남긴 뒤 멈춘다(idle). 질문·`BLOCKER`·`NEED-APPROVAL`도 같다. 답은 팀장이 `herdr agent prompt`로 보낸다. /tmp는 재부팅 때 지워진다 — 재부팅 뒤에는 팀장이 팀원 화면과 docs/05로 상태를 다시 맞추고, 필요한 보고는 다시 요청한다.
+- 팀장은 배정·요청을 보낼 때마다 백그라운드 감시를 띄운다(포그라운드로 기다리지 않는다). 감시는 팀원이 `blocked`(확인창)이 되거나, `idle`·`done`이 되면 끝나고, 팀장은 화면 끝의 머리말 줄과 `to-lead/` 파일을 읽는다. agy는 백그라운드 명령이 도는 동안에도 `idle`·`done`으로 보이므로 화면 끝의 실행 중 표시를 함께 본다.
 - **cf-critic에 새 요청(리뷰 회차·조사)을 보낼 때마다 먼저 컨텍스트를 초기화한다**(사용자 결정 2026-10-11): critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`. 이유는 독립성 — 이전 회차·우리 설명을 기억하면 같은 시각에 끌려가 같은 것을 놓친다. 그래서 요청서는 그 자체로 완결한다: 2회차부터는 이전 지적 목록·근거 경로·해시를 싣고 기억에 기대지 않는다. 같은 회차 안의 되묻기(`ASK`/`ANSWER`)는 초기화하지 않는다.
 - 구현 agy가 작업 중일 때 보낸 입력이 어떻게 처리되는지는 미확인이다. 작업 중인 agy에는 지금 반영돼야 하는 것(교정·`STOP`)만 보내고, 다음 배정은 `idle`·`done`이 된 뒤 보낸다. agy 확인창은 lead가 명령 원문을 읽고 1번(이번만 허용)으로만 답한다. 2번(이 대화 동안 접두어 허용)·3번(settings.json에 영구 저장)은 고르지 않는다 — 필요하면 사용자에게 묻고, 3번은 모든 agy가 함께 쓰는 파일이라 원칙상 쓰지 않는다(CF·GJCH 합의 2026-10-15). 예외: Context7 읽기 전용 두 도구(서버 `context7`의 `resolve-library-id`·`query-docs`)는 3번으로 영구 허용한다(사용자 승인 2026-10-16 「1. 둘다 승인, 2. 합니다. 3. 네」). 확인창의 서버·도구 이름이 정확히 이 둘일 때만 3번을 고르고, 같은 도구 이름의 다른 서버(예: `wf3-code-research_context7`)와 그 밖의 MCP 도구는 이름과 인자를 읽고 1번으로 답한다. sandbox 밖이 필요한 명령(예: `/opt/local/bin/bash` 테스트)은 1회 허용으로 처리하고, sandbox 안에서 도는 경로(`/bin/bash`)가 있으면 그쪽을 쓴다. sandbox 허용 경로는 넓히지 않는다.
-- 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
+- 팀원 사이에서 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
 - 팀원 메시지는 받는 쪽 입력창에 사용자 입력처럼 들어온다. 권위 1을 적용한다.
-- **권한·승인 대화상자**: 팀원은 다른 팀원의 대화상자에 답하지 않고 lead에 `BLOCKER`. lead는 내용을 읽고 판단한다 — 읽기 전용·팀 내부 전송·동결 사본의 테스트처럼 범위가 좁은 것은 1회 허용으로 답하고, 영구 허용(「don't ask again」 등 전역에 저장될 수 있는 것)·「사용자 승인」 항목·전역 설정·되돌리기 어려운 것은 사용자에게 묻는다.
+- **권한·승인 대화상자**: 팀원은 다른 팀원의 대화상자에 답하지 않고 lead에 `BLOCKER`. lead는 내용을 읽고 판단한다 — 읽기 전용·팀 내부 전송·동결 사본의 테스트처럼 범위가 좁은 것은 1회 허용으로 답하고, 영구 허용(「don't ask again」 등 전역에 저장될 수 있는 것)·「사용자 승인」 항목·전역 설정·되돌리기 어려운 것은 사용자에게 묻는다. 확인창 내용이 잘려 보이면 팀장은 `herdr pane zoom <pane>` 뒤 펼친다 — agy 명령 확인창은 `ctrl+g`, MCP 도구 확인창은 `ctrl+o` — 그리고 `esc`·zoom 원복. MCP 도구는 서버 이름까지 포함한 전체 식별자를 확인한다(`context7/…`과 `wf3-code-research_context7/…`는 다르다). 외부 팀장도 같다.
+- 이관 중 Herdr 안 `cf-lead`와 외부 팀장은 Claude 세션 간 메시지(`SendMessage`·`ListAgents`)로 연락한다. 이 메시지도 사용자 승인이 아니다(권위 1).
 
 ### 6. 일하는 방식
 - **DIRECTIVE 6칸**: 목표(계획서 절과 한 문장) / 범위(쓰기 허용 파일 3–5개, 밖이 필요하면 `ASK`) / 완료 조건 / 예산(회차 상한, 시간) / 하지 말 것 / Context7(확인할 라이브러리·주제와 기록 항목, 필요 없으면 「해당 없음」). 상대는 대화 이력이 없다고 가정하고 배경 경로를 붙인다.
@@ -96,6 +101,7 @@
 - 팀장은 팀원 창을 감시한다(권한 대화상자는 바로, 진척은 6분 간격). 구현자(cf-impl)는 단계 끝과 30분 무보고 시 `REPORT`.
 - 개입 시점(이때만): ① 단계 시작 DIRECTIVE ② 완료 보고 재검증 — 계획된 검사를 같은 입력으로 다시 돌리고 해시를 대조 ③ `BLOCKER`·`ESCALATE`·`NEED-APPROVAL`·회차 상한 도달 ④ 이탈(범위 밖 수정, 리뷰 입력 수정, 규칙 위반) ⑤ 사용자 승인이 필요한 일. 그 사이 리뷰·수정·회차는 impl과 critic이 직접 돈다.
 - 결정·진행 상태는 docs/05와 회차 폴더에 남긴다. 대화 기록에만 있는 결정은 없는 것으로 본다.
+- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 팀 작업공간에 pane을 열어 `claude`를 띄우고 → 그 pane에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로) → `scripts/team-up.sh --layout`.
 
 ## 안전
 - `rm -rf`, `kill`/`pkill`/`killall`은 직접 실행하지 않는다. 테스트 스크립트 안에서 자기 자식 프로세스·자기 임시 경로만 정리한다(`trap`, 프로세스 그룹).
