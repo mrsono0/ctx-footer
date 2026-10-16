@@ -95,7 +95,7 @@ run() {
 }
 
 # 읽기 전용이 아닌 호출 줄
-mutations() { grep -vE "^(pane${T}(list|get|layout)|agent${T}(list|get))(${T}|\$)" "$LOG"; }
+mutations() { grep -vE "^(pane${T}(list|get|layout|process-info)|agent${T}(list|get))(${T}|\$)" "$LOG"; }
 count() { grep -cF -- "$1" "$LOG"; }
 field() { # pane_id dotted.field
 	python3 -c 'import sys,json
@@ -129,6 +129,7 @@ check() { # 설명, 명령...
 eq() { [ "$1" = "$2" ] || { echo "  기대 '$2' / 실제 '$1'" >&2; return 1; }; }
 no_mutations() { [ -z "$(mutations)" ]; }
 has() { local s; for s in "$@"; do case "$OUT" in *"$s"*) ;; *) return 1 ;; esac; done; }
+not_has() { local s; for s in "$@"; do case "$OUT" in *"$s"*) echo "  출력에 없어야 할 '$s' 포함" >&2; return 1 ;; esac; done; }
 line_matches() { printf '%s\n' "$OUT" | grep -E "$1" >/dev/null; }
 
 # ---------------------------------------------------------------------------
@@ -198,6 +199,132 @@ run
 check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
 check "다른 탭 경고" has "cf-impl(wN:p3)이 팀장과 다른 탭"
+
+# --- 점검: 팀원 실행 옵션 비교 (argv-r1) -------------------------------------
+CASE="점검 옵션 ①⑦: 두 석 모두 일치(기동형) + 자식 MCP 비밀 값 미출력"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model","gemini-4-argon-high","--mode","accept-edits","--sandbox"]},{"pid":202,"name":"node","argv":["node","context7-mcp","--api-key","SECRET-SENTINEL-123"],"cmdline":"node context7-mcp --api-key SECRET-SENTINEL-123"},{"pid":203,"name":"notebooklm-mcp"}]}'
+run
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "팀원 2석만 process-info 호출" eq "$(count "pane${T}process-info")" 2
+check "옵션 줄 없음" not_has "↳ 옵션"
+check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 스냅샷(B): SEAT_CMD 기대 단위 목록 고정"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy"]}]}'
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "cf-impl 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --model gemini-4-argon-high, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --resume-impl <id>)"
+check "cf-critic 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+
+CASE="점검 옵션 ②⑦: agy 복구형(--conversation만) → 불일치 + 비밀 미출력"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--conversation","SECRET-SENTINEL-123"]},{"pid":202,"name":"node","argv":["node","context7-mcp","--api-key","SECRET-SENTINEL-123"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "agy 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --model gemini-4-argon-high, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --resume-impl <id>)"
+check "옵션 줄 1개(impl만)" eq "$(printf '%s\n' "$OUT" | grep -c '↳ 옵션')" 1
+check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 ③: agy 복구형 + 전체 옵션(순서 무관) → 일치"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" "{\"foreground_processes\":[{\"pid\":101,\"name\":\"agy\",\"argv\":[\"agy\",\"--conversation\",\"$IMPL_SID\",\"--sandbox\",\"--mode\",\"accept-edits\",\"--model\",\"gemini-4-argon-high\"]}]}"
+run
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "옵션 줄 없음" not_has "↳ 옵션"
+
+CASE="점검 옵션 ④: codex resume만 → 불일치"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","resume","01a14527-0000-7000-8000-000000000001"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "codex 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+check "옵션 줄 1개(critic만)" eq "$(printf '%s\n' "$OUT" | grep -c '↳ 옵션')" 1
+
+CASE="점검 옵션 ⑤: --model=값 꼴 정규화 → 일치"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model=gemini-4-argon-high","--mode=accept-edits","--sandbox"]}]}'
+run
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "옵션 줄 없음" not_has "↳ 옵션"
+
+CASE="점검 옵션 C: 값 다름 구분(없음 + 다름 동시) 및 실제 값 미출력"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model","SECRET-SENTINEL-123","--mode","accept-edits"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "없음·다름 한 줄 표시" has "        ↳ 옵션 불일치: 없음 --sandbox; 다름 --model(기대 gemini-4-argon-high) (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --resume-impl <id>)"
+check "실제 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 E1: 반복 깃발(-c other=1 -c model_reasoning_effort=high) → 일치"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","-m","gpt-6.1-sol","-c","other=1","-c","model_reasoning_effort=high"]}]}'
+run
+check "종료 코드 0" eq "$RC" 0
+check "옵션 줄 없음" not_has "↳ 옵션"
+
+CASE="점검 옵션 E2: 반복 깃발(-c model_reasoning_effort=low -c other=high) → 불일치"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","-m","gpt-6.1-sol","-c","model_reasoning_effort=low","-c","other=high"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "불일치 표시" has "        ↳ 옵션 불일치: 다름 -c(기대 model_reasoning_effort=high) (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+
+CASE="점검 옵션 ⑥-1: agent 프로세스 0개 → 판정 불가"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":202,"name":"node","argv":["node","context7-mcp","--api-key","SECRET-SENTINEL-123"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "0개 판정 불가" has "        ↳ 옵션 판정 불가: agent 프로세스 0개"
+check "idle이면 작업 중 문구 없음" not_has "작업 중"
+check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 ⑥-2·A: agent 프로세스 2개 이상 + working 상태 → 판정 불가(작업 중 표시)"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+python3 -c 'import sys,json
+st=json.load(open(sys.argv[1]))
+for p in st["panes"]:
+    if p["pane_id"]=="wN:p3": p["agent_status"]="working"
+json.dump(st,open(sys.argv[1],"w"),ensure_ascii=False)' "$STATE"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","SECRET-SENTINEL-123"]},{"pid":105,"name":"agy","argv":["agy","SECRET-SENTINEL-123"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "2개 이상 + 작업 중 표시" has "        ↳ 옵션 판정 불가: agent 프로세스 2개 이상 (작업 중 — 다시 점검)"
+check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 ⑥-3: argv 없음 → 판정 불가"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","cmdline":"agy SECRET-SENTINEL-123"}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "argv 없음 판정 불가" has "        ↳ 옵션 판정 불가: argv 없음"
+check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 ⑥-4·D: process-info 실패 + stderr 비밀 미출력"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate process_info_fail '["wN:p3"]'
+setstate process_info_stderr '"herdr error: SECRET-SENTINEL-123"'
+run
+check "종료 코드 1" eq "$RC" 1
+check "process-info 실패 판정 불가" has "        ↳ 옵션 판정 불가: process-info 실패"
+check "stderr 비밀 미출력" not_has "SECRET-SENTINEL-123"
+
+CASE="점검 옵션 ⑥-5·D: JSON 오류 + 원문 비밀 미출력"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info_raw.wN:p4" '"invalid json SECRET-SENTINEL-123"'
+run
+check "종료 코드 1" eq "$RC" 1
+check "JSON 오류 판정 불가" has "        ↳ 옵션 판정 불가: JSON 오류"
+check "원문 비밀 미출력" not_has "SECRET-SENTINEL-123"
 
 # ---------------------------------------------------------------------------
 CASE="--up: 모두 살아 있음"

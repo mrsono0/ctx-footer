@@ -9,8 +9,12 @@
   auto_sidebar  참이면 --new-tab으로 만든 탭에 agent 없는 "Sidebar" pane을 함께 만든다(사용자 설정 재현).
   late_sidebar  참이면 --new-tab 직후에는 Sidebar를 만들지 않고, 두 번째 pane list(또는 기다리지 않고 되돌릴 때)에 대상 pane의 탭에 늦게 만든다(늦은 Sidebar 경쟁 재현).
   auto_pane_agent  위 Sidebar pane에 줄 agent 종류(시험용, 기본 없음).
-  fail   실패시킬 명령 목록(예: ["move"], ["resize"]).
+  fail   실패시킬 명령 목록(예: ["move"], ["resize"], ["process-info"]).
   fail_once  한 번만 실패시킬 명령 목록(예: ["move"], ["wait_list"], ["wait_timeout"]).
+  process_info  pane_id별 process_info 객체({"foreground_processes": [...]}). 미지정 시 기본 기동 argv 반환.
+  process_info_raw  pane_id별 원문 stdout 문자열(JSON 오류 시험용).
+  process_info_fail  process-info를 실패시킬 pane_id 목록.
+  process_info_stderr  process-info 실패 시 stderr에 출력할 문자열.
 기록: 모든 호출을 $MOCK_HERDR_LOG 에 한 줄(인자를 탭으로 연결)씩 남긴다.
 탭 크기는 100x33(팀장 0.6 → 높이 20).
 """
@@ -277,6 +281,34 @@ if cmd == ["pane", "layout"]:
         rects(tabs[t], 0, 0, W, H, out_p, out_s)
     out = [{"pane_id": pid, "rect": rect} for pid, rect in out_p]
     ok("pane_layout", "layout", {"tab_id": t, "workspace_id": src["workspace_id"], "panes": out, "splits": out_s})
+if cmd == ["pane", "process-info"]:
+    pid = opt("--pane") or os.environ.get("HERDR_PANE_ID") or ""
+    if should_fail("process-info") or pid in state.get("process_info_fail", []):
+        if state.get("process_info_stderr"):
+            sys.stderr.write(state["process_info_stderr"] + "\n")
+        err("process_info_failed", "mock process-info failure")
+    if pid in state.get("process_info_raw", {}):
+        sys.stdout.write(state["process_info_raw"][pid] + "\n")
+        sys.exit(0)
+    p = by_id(pid)
+    if not p:
+        err("pane_not_found", "pane not found")
+    pinfo = state.get("process_info", {}).get(pid)
+    if pinfo is None:
+        ag = p.get("agent")
+        if ag == "agy":
+            fg = [{"pid": 101, "name": "agy", "argv": [
+                "agy", "--model", "gemini-4-argon-high", "--mode", "accept-edits", "--sandbox"]}]
+        elif ag == "codex":
+            fg = [{"pid": 102, "name": "codex", "argv": [
+                "codex", "--search", "--yolo", "--disable", "worktrees",
+                "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high"]}]
+        elif ag:
+            fg = [{"pid": 100, "name": ag, "argv": [ag]}]
+        else:
+            fg = []
+        pinfo = {"foreground_processes": fg}
+    ok("pane_process_info", "process_info", pinfo)
 if cmd == ["pane", "swap"]:
     a, b = by_id(opt("--source-pane")), by_id(opt("--target-pane"))
     if not a or not b:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ctx-footer 팀(팀장 1 + 팀원 2) 기동·복구. Herdr pane 안, 이 저장소 안에서만 동작한다.
 #   scripts/team-up.sh                      점검만: 세 석의 pane·agent·상태 표 출력(변경 없음)
-#                                           종료 코드 0 = 세 석 모두 살아 있음, 1 = 아니거나 오류
+#                                           종료 코드 0 = 세 석 모두 살아 있고 팀원 옵션 일치, 1 = 아니거나 오류
 #   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
 #   scripts/team-up.sh --resume-impl <id>   구현 agy를 `agy --conversation <id> --model … --mode accept-edits --sandbox`로 복구한다
 #   scripts/team-up.sh --layout             팀장 pane에서: 기존 세 석을 배치 기준(팀장 위 0.6, 아래 줄 impl|critic 반반)으로 맞춘다
@@ -154,7 +154,81 @@ S_AGENT=()
 S_ASTATUS=()
 S_LABEL=()
 S_NOTE=()
+S_OPT_NOTE=()
+opts_ok=1
 PANES_JSON=""
+
+# 점검 전용: 팀원 pane의 실제 실행 옵션을 SEAT_CMD 기대 단위와 비교한다.
+# 비밀 값 보호: 출력에는 기대 단위(SEAT_CMD에서 온 것)와 고정 사유만 쓰고, 실제 argv·cmdline·원문 JSON은 출력하지 않는다.
+# shellcheck disable=SC2016
+PY_CHECK_OPTS='import sys,os,json,shlex
+kind,seat_cmd,astatus,recover,rc=sys.argv[1:6]
+def unv(reason):
+    suf="" if astatus in ("idle","done") else " (작업 중 — 다시 점검)"
+    print("옵션 판정 불가: "+reason+suf)
+    sys.exit(1)
+if rc!="0": unv("process-info 실패")
+try:
+    d=json.loads(os.environ.get("PINFO_JSON",""))
+    fg=d.get("result",{}).get("process_info",{}).get("foreground_processes") if isinstance(d,dict) else None
+except Exception:
+    fg=None
+if not isinstance(fg,list) or any(not isinstance(p,dict) for p in fg):
+    unv("JSON 오류")
+procs=[p for p in fg if p.get("name")==kind]
+if len(procs)==0: unv("agent 프로세스 0개")
+if len(procs)>=2: unv("agent 프로세스 2개 이상")
+argv=procs[0].get("argv")
+if not isinstance(argv,list) or len(argv)<1 or any(not isinstance(x,str) for x in argv):
+    unv("argv 없음")
+# 값 없는 깃발 뒤에 위치 인자가 오거나 값이 -로 시작하면 이 규칙은 틀린다 — SEAT_CMD를 바꾸면 스냅샷 테스트가 알려 준다.
+words=shlex.split(seat_cmd)[1:]
+units=[]; k=0
+while k<len(words):
+    if words[k].startswith("-") and k+1<len(words) and not words[k+1].startswith("-"):
+        units.append((words[k],words[k+1])); k+=2
+    else:
+        units.append((words[k],)); k+=1
+act=[]
+for w in argv[1:]:
+    if w.startswith("--") and "=" in w: act.extend(w.split("=",1))
+    else: act.append(w)
+missing=[]; diff_val=[]
+for u in units:
+    if len(u)==1:
+        if u[0] not in act: missing.append(u[0])
+    else:
+        flag,val=u
+        if any(act[j]==flag and act[j+1]==val for j in range(len(act)-1)): continue
+        if any(act[j]==flag and not act[j+1].startswith("-") for j in range(len(act)-1)):
+            diff_val.append("%s(기대 %s)"%(flag,val))
+        else:
+            missing.append("%s %s"%(flag,val))
+if not missing and not diff_val: sys.exit(0)
+parts=[]
+if missing: parts.append("없음 "+", ".join(missing))
+if diff_val: parts.append("다름 "+", ".join(diff_val))
+print("옵션 불일치: "+"; ".join(parts)+" ("+recover+")")
+sys.exit(1)'
+
+check_member_opts() {
+	local i pinfo rc recover note
+	for i in 1 2; do
+		case "${S_STATUS[$i]}" in alive | unnamed) ;; *) continue ;; esac
+		if [ "$i" = 1 ]; then
+			recover="복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --resume-impl <id>"
+		else
+			recover="복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up"
+		fi
+		pinfo="$(herdr pane process-info --pane "${S_PANE[$i]}" 2>/dev/null)"
+		rc=$?
+		if ! note="$(PINFO_JSON="$pinfo" python3 -c "$PY_CHECK_OPTS" \
+			"${SEAT_KIND[$i]}" "${SEAT_CMD[$i]}" "${S_ASTATUS[$i]}" "$recover" "$rc")"; then
+			S_OPT_NOTE[i]="$note"
+			opts_ok=0
+		fi
+	done
+}
 
 classify_all() {
 	local i owner_json out
@@ -196,6 +270,7 @@ print_table() {
 		printf '%-7s %-11s %-7s %-7s %-17s %-20s %s\n' "${SEAT_ROLE[$i]}" "${SEAT_NAME[$i]}" \
 			"${S_PANE[$i]:--}" "${S_AGENT[$i]:--}" "$st" "${S_LABEL[$i]:--}" "$(action_of "$i")"
 		[ -z "${S_NOTE[$i]}" ] || echo "        ↳ ${S_NOTE[$i]}"
+		[ -z "${S_OPT_NOTE[$i]:-}" ] || echo "        ↳ ${S_OPT_NOTE[$i]}"
 	done
 }
 
@@ -619,9 +694,10 @@ classify_all
 
 case "$mode" in
 check)
+	check_member_opts
 	print_table
 	check_layout
-	all_alive
+	all_alive && [ "$opts_ok" = 1 ]
 	exit
 	;;
 up)
