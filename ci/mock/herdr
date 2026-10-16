@@ -134,6 +134,12 @@ def path_to(n, pid, acc=()):
 def default_tree(ids):
     if not ids:
         return None
+    first = by_id(ids[0]) or {}
+    if first.get("agent") in ("agy", "codex") or first.get("label") in ("CF 구현 · agy", "CF 검토 · Codex"):
+        row = {"p": ids[-1]}
+        for k in range(len(ids) - 2, -1, -1):
+            row = {"d": "right", "r": round(1 / (len(ids) - k), 4), "a": {"p": ids[k]}, "b": row}
+        return row
     lead, rest = ids[0], ids[1:]
     if not rest:
         return {"p": lead}

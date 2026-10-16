@@ -5,3 +5,4 @@ plugin/.claude-plugin/types/
 .DS_Store
 .gjc/
 .claude/settings.local.json
+.local/

@@ -704,10 +704,11 @@ check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
 CASE="Herdr 밖"
 mkstate "$LEAD" "$CRITIC"
 : >"$LOG"
-OUT="$(cd "$ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" \
+OUT="$(cd "$ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID -u CF_EXTERNAL_LEAD MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" \
 	"$TEAM_UP_BASH" "$SCRIPT" --up 2>&1)"
 RC=$?
 check "종료 코드 1" eq "$RC" 1
+check "Herdr 밖 안내" has "Herdr pane 안이 아니다; 아무것도 하지 않음"
 check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
 
 CASE="저장소 밖 cwd"
@@ -723,6 +724,221 @@ mkstate "wN:p1|wN||claude||/tmp/other-project"
 run --up
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
+
+# ---------------------------------------------------------------------------
+# 외부 팀장 모드 (CF_EXTERNAL_LEAD=1 + HERDR_PANE_ID 비어 있음)
+# 실제 저장소의 .local/team/external-lead를 건드리지 않도록 임시 메인 git 저장소(WT_MAIN)에서 실행한다.
+EXT_SID="a1b2c3d4-0000-4000-8000-000000000001"
+OTHER_EXT_SID="deadbeef-9999-4000-8000-000000000002"
+WT_MAIN="$TMP/wt-main"
+WT_LINKED="$TMP/wt-linked"
+mkdir -p "$WT_MAIN/scripts" "$WT_MAIN/.claude/worktrees/w1"
+cp "$SCRIPT" "$WT_MAIN/scripts/team-up.sh"
+chmod +x "$WT_MAIN/scripts/team-up.sh"
+(
+	cd "$WT_MAIN" &&
+		HOME="$TMP" XDG_CONFIG_HOME="$TMP" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git init -q &&
+		HOME="$TMP" XDG_CONFIG_HOME="$TMP" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init &&
+		HOME="$TMP" XDG_CONFIG_HOME="$TMP" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git worktree add -q "$WT_LINKED" -b linked
+)
+mkdir -p "$WT_LINKED/scripts"
+cp "$SCRIPT" "$WT_LINKED/scripts/team-up.sh"
+chmod +x "$WT_LINKED/scripts/team-up.sh"
+EXT_ROOT="$(cd "$WT_MAIN" && pwd -P)"
+EXT_SCRIPT="$EXT_ROOT/scripts/team-up.sh"
+EXT_LOCK="$EXT_ROOT/.local/team/external-lead"
+EXT_LEAD="wN:p1|wN|CF 팀장 · Claude|claude|cf-lead|$EXT_ROOT"
+EXT_LEAD_CLEARED="wN:p1|wN|CF 팀장 · Claude|claude||$EXT_ROOT|$LEAD_SID"
+EXT_IMPL="wN:p3|wN|CF 구현 · agy|agy|cf-impl|$EXT_ROOT|$IMPL_SID"
+EXT_CRITIC="wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$EXT_ROOT"
+
+run_ext() {
+	: >"$LOG"
+	OUT="$(cd "$EXT_ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_WORKSPACE_ID -u HERDR_TAB_ID \
+		CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+		MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" \
+		CF_RETRIES=3 CF_RETRY_SLEEP=0 "$TEAM_UP_BASH" "$EXT_SCRIPT" "$@" 2>&1)"
+	RC=$?
+}
+
+CASE="외부 모드 ①: CF_EXTERNAL_LEAD=1 + HERDR_PANE_ID 있음 → die·무변경"
+mkstate "$EXT_LEAD" "$EXT_IMPL" "$EXT_CRITIC"
+: >"$LOG"
+OUT="$(cd "$EXT_ROOT" && env HERDR_ENV=1 HERDR_PANE_ID=wN:p1 CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+	MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" "$TEAM_UP_BASH" "$EXT_SCRIPT" 2>&1)"
+RC=$?
+check "종료 코드 1" eq "$RC" 1
+check "거부 문구" has "Herdr pane 안 세션에서는 CF_EXTERNAL_LEAD를 쓰지 않는다; 아무것도 하지 않음"
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+
+CASE="외부 모드: CLAUDE_CODE_SESSION_ID 없음 → die"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+: >"$LOG"
+OUT="$(cd "$EXT_ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID -u CLAUDE_CODE_SESSION_ID CF_EXTERNAL_LEAD=1 \
+	MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" "$TEAM_UP_BASH" "$EXT_SCRIPT" 2>&1)"
+RC=$?
+check "종료 코드 1" eq "$RC" 1
+check "거부 문구" has "CLAUDE_CODE_SESSION_ID가 없다; 외부 팀장 세션을 확인할 수 없음"
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+
+CASE="외부 모드 ③: 팀원 2석 alive + 기록 없음 → 점검 rc 0, external(이 세션), 파일 무생성"
+rm -f "$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "현재 pane 외부" has "현재 pane 외부"
+check "lead 행 external(이 세션)" line_matches "^lead +cf-lead +- +claude +external\(이 세션\) +- +유지\$"
+check "기록 없음 경고 줄" has "↳ 외부 팀장 기록: 없음"
+check "배치 경고 없음" eq "$(printf '%s\n' "$OUT" | grep -c '배치')" 0
+check "기록 파일 생성 안 됨" test ! -e "$EXT_LOCK"
+
+CASE="외부 모드 (§8.3): HERDR_ENV=1인데 HERDR_PANE_ID만 없음 + CF_EXTERNAL_LEAD=1 → 외부 모드로 동작"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+: >"$LOG"
+OUT="$(cd "$EXT_ROOT" && env -u HERDR_PANE_ID HERDR_ENV=1 CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+	MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" "$TEAM_UP_BASH" "$EXT_SCRIPT" 2>&1)"
+RC=$?
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "external(이 세션)" has "external(이 세션)"
+
+CASE="외부 모드 ④: 팀원 pane 0개 → die(0개 문구)"
+mkstate "wN:p9|wN|일반 셸|||/tmp/other-project"
+run_ext
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "0개 문구" has "CF 팀원 pane을 찾지 못했다; Herdr에서 작업공간과 label 「CF 구현 · agy」 빈 셸 pane을 먼저 만든다"
+
+CASE="외부 모드 ⑤: 팀원 pane이 두 작업공간 → die"
+mkstate "w1:p3|w1|CF 구현 · agy|agy|cf-impl|$EXT_ROOT|$IMPL_SID" "w2:p4|w2|CF 검토 · Codex|codex|cf-critic|$EXT_ROOT"
+run_ext
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "여러 작업공간 문구" has "CF 팀원 pane이 여러 작업공간에 있다: w1, w2; 아무것도 하지 않음"
+
+CASE="외부 모드 ⑥: Herdr 안 cf-lead 살아 있음 → 경고 줄·rc 0·건드리지 않음"
+mkstate "$EXT_LEAD" "$EXT_IMPL" "$EXT_CRITIC"
+run_ext
+check "종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+check "Herdr 안 cf-lead 경고 줄" has "↳ Herdr 안 cf-lead(wN:p1)가 살아 있음 — 이관 중이면 한쪽만 팀원에게 입력한다"
+check "cf-lead 이름 그대로" eq "$(pane_named cf-lead)" wN:p1
+
+CASE="외부 모드 ⑦ + §8.1: --up critic 없음 + 첫 기록 생성 → impl 옆 새 pane·이름 확보"
+rm -f "$EXT_LOCK"
+mkstate "$EXT_IMPL"
+run_ext --up
+c="$(pane_named cf-critic)"
+check "종료 코드 0" eq "$RC" 0
+check "기록 파일 생성" test -f "$EXT_LOCK"
+check "기록된 세션 id 일치" eq "$(cat "$EXT_LOCK")" "$EXT_SID"
+check "cf-lead rename 없음" eq "$(grep -cE "^agent${T}rename${T}.*${T}cf-lead\$" "$LOG")" 0
+check "critic 새 pane을 impl 오른쪽에 분할" eq "$(field "$c" split_from)|$(field "$c" split_direction)" "wN:p3|right"
+check "critic 기동·이름 확보" eq "$(field "$c" agent)|$(field "$c" label)" "codex|CF 검토 · Codex"
+check "배치 impl|critic 0.50" eq "$(shape wN:t1)" "right(0.50,wN:p3,$c)"
+
+CASE="외부 모드 (§8.3): 같은 세션 id 기록됨 → 점검 경고 없음·--up 통과"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext
+check "점검 종료 코드 0" eq "$RC" 0
+check "기록 경고 없음" not_has "외부 팀장 기록:"
+run_ext --up
+check "--up 종료 코드 0" eq "$RC" 0
+check "변경 명령 없음" no_mutations
+
+CASE="외부 모드 (§8.3, §9.2): 다른 세션 id 기록됨 → 점검 경고 줄(파일 무변경) · 바꾸는 모드 die"
+printf '%s\n' "$OTHER_EXT_SID" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext
+check "점검 종료 코드 0" eq "$RC" 0
+check "다른 세션 경고 줄" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…)"
+check "기록 파일 내용 유지" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
+run_ext --up
+check "--up 종료 코드 1" eq "$RC" 1
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "기록 불일치 die 문구(§8.1+§9.2)" has \
+	"다른 세션(deadbeef…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 이 세션에서 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --claim-external (같은 외부 팀장이 /clear·새 대화 뒤라 세션 id가 바뀐 경우도 사용자 확인 후 --claim-external)"
+check "기록 파일 내용 여전히 유지" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
+
+CASE="외부 모드 (§8.1, §8.3): --claim-external 덮어쓰기 및 비외부 모드 거부"
+: >"$LOG"
+OUT="$(cd "$EXT_ROOT" && env HERDR_ENV=1 HERDR_PANE_ID=wN:p1 MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" \
+	"$TEAM_UP_BASH" "$EXT_SCRIPT" --claim-external 2>&1)"
+RC=$?
+check "Herdr 안 모드에서 --claim-external 거부" eq "$RC" 1
+check "기록 파일 덮어쓰지 않음" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
+run_ext --claim-external
+check "--claim-external 종료 코드 0" eq "$RC" 0
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "새 세션 id로 덮어써짐" eq "$(cat "$EXT_LOCK")" "$EXT_SID"
+run_ext --up
+check "덮어쓴 뒤 --up 통과" eq "$RC" 0
+
+CASE="외부 모드 ⑦: --up impl·critic 둘 다 없음 → die·파일 무생성"
+rm -f "$EXT_LOCK"
+mkstate "$EXT_LEAD"
+run_ext --up
+check "종료 코드 1" eq "$RC" 1
+check "변경 명령 없음" no_mutations
+check "0개 문구" has "CF 팀원 pane을 찾지 못했다; Herdr에서 작업공간과 label 「CF 구현 · agy」 빈 셸 pane을 먼저 만든다"
+check "실패 시 기록 파일 생성 안 됨" test ! -e "$EXT_LOCK"
+
+CASE="외부 모드: --resume-impl critic만 있을 때 왼쪽 자리에 복구"
+mkstate "$EXT_CRITIC"
+run_ext --resume-impl "$RESUME_SID"
+i="$(pane_named cf-impl)"
+check "종료 코드 0" eq "$RC" 0
+check "cf-lead rename 없음" eq "$(grep -cE "^agent${T}rename${T}.*${T}cf-lead\$" "$LOG")" 0
+check "배치 impl|critic 0.50" eq "$(shape wN:t1)" "right(0.50,$i,wN:p4)"
+
+CASE="외부 모드 ⑧: --layout 좌우 붙음 + 비율 다름 → 비율만 맞춤(팀장 pane 무변경)"
+mkstate "$EXT_LEAD" "$EXT_IMPL" "$EXT_CRITIC"
+settree wN:t1 "down(0.7,wN:p1,right(0.35,wN:p3,wN:p4))"
+run_ext --layout
+check "종료 코드 0" eq "$RC" 0
+check "pane move/close 없음" eq "$(grep -cE "^(pane${T}move|tab${T}close)${T}" "$LOG")" 0
+check "팀장 비율(0.70)은 그대로 두고 impl/critic 비율만 0.50" eq "$(shape wN:t1)" "down(0.70,wN:p1,right(0.50,wN:p3,wN:p4))"
+
+CASE="외부 모드 ⑧: --layout 다른 탭 / 섞인 모양 / 한 석만 있음 → 무이동·rc 1"
+mkstate "$EXT_IMPL" "wN:p4|wN|CF 검토 · Codex|codex|cf-critic|$EXT_ROOT||wN:t2"
+run_ext --layout
+check "다른 탭 종료 코드 1" eq "$RC" 1
+check "다른 탭 변경 없음" no_mutations
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+settree wN:t1 "down(0.5,wN:p3,wN:p4)"
+run_ext --layout
+check "위아래 배치 종료 코드 1" eq "$RC" 1
+check "위아래 배치 변경 없음" no_mutations
+mkstate "$EXT_IMPL"
+run_ext --layout
+check "한 석만 있음 종료 코드 1" eq "$RC" 1
+check "한 석만 있음 변경 없음" no_mutations
+
+CASE="외부 모드 ⑨: --hook-clear → 0·무출력·herdr 호출 없음"
+mkstate "$EXT_LEAD_CLEARED" "$EXT_IMPL" "$EXT_CRITIC"
+run_ext --hook-clear <<<"{\"session_id\":\"$LEAD_SID\",\"source\":\"clear\"}"
+check "종료 코드 0" eq "$RC" 0
+check "출력 없음" eq "$OUT" ""
+check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+
+CASE="외부 모드 (§9.1): git worktree add 연결 worktree 및 .claude/worktrees 거절"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+: >"$LOG"
+OUT="$(cd "$WT_LINKED" && env -u HERDR_ENV -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+	MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" "$TEAM_UP_BASH" "$WT_LINKED/scripts/team-up.sh" 2>&1)"
+RC=$?
+check "연결 worktree 종료 코드 1" eq "$RC" 1
+check "연결 worktree 거절 문구" has "데스크톱 세션의 worktree 옵션을 끄고 저장소 폴더에서 새 세션을 연다"
+check "연결 worktree herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+
+: >"$LOG"
+OUT="$(cd "$EXT_ROOT/.claude/worktrees/w1" && env -u HERDR_ENV -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+	MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" "$TEAM_UP_BASH" "$EXT_SCRIPT" 2>&1)"
+RC=$?
+check ".claude/worktrees 하위 종료 코드 1" eq "$RC" 1
+check ".claude/worktrees 거절 문구" has "데스크톱 세션의 worktree 옵션을 끄고 저장소 폴더에서 새 세션을 연다"
+check ".claude/worktrees herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
 
 # shellcheck disable=SC2016
 echo "team-up 테스트: 통과 $PASS / 전체 $((PASS + FAIL)) (bash: $("$TEAM_UP_BASH" -c 'echo $BASH_VERSION'))"

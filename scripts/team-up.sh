@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# ctx-footer 팀(팀장 1 + 팀원 2) 기동·복구. Herdr pane 안, 이 저장소 안에서만 동작한다.
+# ctx-footer 팀(팀장 1 + 팀원 2) 기동·복구. Herdr pane 안(또는 CF_EXTERNAL_LEAD=1 외부 팀장), 이 저장소 안에서만 동작한다.
 #   scripts/team-up.sh                      점검만: 세 석의 pane·agent·상태 표 출력(변경 없음)
 #                                           종료 코드 0 = 세 석 모두 살아 있고 팀원 옵션 일치, 1 = 아니거나 오류
-#   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고 없는 팀원만 띄운다
+#   scripts/team-up.sh --up                 이 pane을 cf-lead로 확보하고(외부 팀장은 생략) 없는 팀원만 띄운다
 #   scripts/team-up.sh --resume-impl <id>   구현 agy를 `agy --conversation <id> --model … --mode accept-edits --sandbox`로 복구한다
-#   scripts/team-up.sh --layout             팀장 pane에서: 기존 세 석을 배치 기준(팀장 위 0.6, 아래 줄 impl|critic 반반)으로 맞춘다
+#   scripts/team-up.sh --layout             기존 석을 배치 기준(팀장 위 0.6 + 아래 반반, 외부 팀장은 impl|critic 반반)으로 맞춘다
+#   scripts/team-up.sh --claim-external     외부 팀장 전용(CF_EXTERNAL_LEAD=1): 현재 CLAUDE_CODE_SESSION_ID를 .local/team/external-lead에 기록한다
 #   scripts/team-up.sh --hook-clear         SessionStart(clear) 훅 전용: 팀장 pane에 cf-lead 이름을 다시 붙인다
 # 다른 pane이 쓰는 이름은 건드리지 않는다. 살아 있는 팀원은 재생성하지 않는다.
 # 남은 빈 셸 pane(같은 작업공간·label 일치·agent 없음·저장소 cwd)은 새로 만들지 않고 재사용한다.
@@ -29,7 +30,7 @@ RETRIES="${CF_RETRIES:-30}"         # 감지·보고 지연 대기 횟수
 RETRY_SLEEP="${CF_RETRY_SLEEP:-2}"  # 대기 간격(초) → 기본 최대 약 60초
 
 usage() {
-	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 warn() { echo "team-up: $*" >&2; }
@@ -42,6 +43,7 @@ case "${1:-}" in
 "") ;;
 --up) mode=up ;;
 --layout) mode=layout ;;
+--claim-external) mode=claim_external ;;
 --resume-impl)
 	mode=resume
 	resume_id="${2:-}"
@@ -58,6 +60,13 @@ esac
 [ "$#" -le 1 ] || usage
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+EXT_LEAD=0
+EXT_LEAD_FILE="$ROOT/.local/team/external-lead"
+
+# 외부 모드에서는 --hook-clear가 아무것도 하지 않고 바로 0으로 끝난다.
+if [ "$mode" = hook ] && [ "${CF_EXTERNAL_LEAD:-}" = 1 ] && [ -z "${HERDR_PANE_ID:-}" ]; then
+	exit 0
+fi
 
 # --- 훅 진입점: stdin JSON의 source가 clear이고 session_id가 있을 때만 백그라운드 작업을 띄운다 ---
 # 무엇이든 실패하면 조용히 0. stdout에 쓰지 않는다(SessionStart stdout은 대화 문맥에 들어간다).
@@ -83,12 +92,58 @@ except (OSError, ValueError): pass' 2>/dev/null)"
 	exit 0
 fi
 
-# --- 가드: Herdr pane 안, 이 저장소 안에서만 ---
-[ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || die "Herdr pane 안이 아니다; 아무것도 하지 않음"
+# --- 가드: Herdr pane 안(또는 CF_EXTERNAL_LEAD=1 외부 팀장), 이 저장소 안에서만 ---
+if [ "${CF_EXTERNAL_LEAD:-}" = 1 ]; then
+	[ -z "${HERDR_PANE_ID:-}" ] || die "Herdr pane 안 세션에서는 CF_EXTERNAL_LEAD를 쓰지 않는다; 아무것도 하지 않음"
+	EXT_LEAD=1
+else
+	[ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || die "Herdr pane 안이 아니다; 아무것도 하지 않음"
+	[ "$mode" != claim_external ] || die "--claim-external은 외부 팀장 모드(CF_EXTERNAL_LEAD=1) 전용이다; 아무것도 하지 않음"
+fi
 under_root() { case "${1%/}/" in "$ROOT"/*) return 0 ;; esac; return 1; }
 under_root "$(pwd -P)" || die "현재 디렉터리가 $ROOT 밖이다; 아무것도 하지 않음"
 command -v herdr >/dev/null || die "herdr 명령이 없다"
 command -v python3 >/dev/null || die "python3 명령이 없다"
+
+read_ext_lead_id() {
+	local id=""
+	[ -f "$EXT_LEAD_FILE" ] && IFS= read -r id <"$EXT_LEAD_FILE" || true
+	printf '%s' "$id"
+}
+
+die_ext_lead_mismatch() { # recorded_id
+	die "다른 세션(${1:0:8}…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 이 세션에서 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --claim-external (같은 외부 팀장이 /clear·새 대화 뒤라 세션 id가 바뀐 경우도 사용자 확인 후 --claim-external)"
+}
+
+ensure_external_lead_lock() {
+	local rec_id
+	[ "$EXT_LEAD" = 1 ] || return 0
+	mkdir -p "$ROOT/.local/team" || die ".local/team 디렉터리를 만들지 못했다"
+	(set -o noclobber; printf '%s\n' "$CLAUDE_CODE_SESSION_ID" >"$EXT_LEAD_FILE") 2>/dev/null || true
+	rec_id="$(read_ext_lead_id)"
+	[ -n "$rec_id" ] && [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ] || die_ext_lead_mismatch "$rec_id"
+}
+
+if [ "$EXT_LEAD" = 1 ]; then
+	WT_ERR="데스크톱 세션의 worktree 옵션을 끄고 저장소 폴더에서 새 세션을 연다"
+	case "$ROOT/$(pwd -P)/" in */.claude/worktrees/*) die "$WT_ERR" ;; esac
+	git_dir="$(cd "$ROOT" && d="$(HOME=/dev/null XDG_CONFIG_HOME=/dev/null GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git -C "$ROOT" rev-parse --git-dir 2>/dev/null)" && [ -n "$d" ] && cd "$d" && pwd -P)" || die "$WT_ERR"
+	git_common_dir="$(cd "$ROOT" && d="$(HOME=/dev/null XDG_CONFIG_HOME=/dev/null GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null)" && [ -n "$d" ] && cd "$d" && pwd -P)" || die "$WT_ERR"
+	[ "$git_dir" = "$git_common_dir" ] || die "$WT_ERR"
+	[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || die "CLAUDE_CODE_SESSION_ID가 없다; 외부 팀장 세션을 확인할 수 없음"
+	if [ "$mode" = claim_external ]; then
+		mkdir -p "$ROOT/.local/team" || die ".local/team 디렉터리를 만들지 못했다"
+		printf '%s\n' "$CLAUDE_CODE_SESSION_ID" >|"$EXT_LEAD_FILE" || die "외부 팀장 기록($EXT_LEAD_FILE)을 쓰지 못했다"
+		echo "외부 팀장 기록 갱신: ${CLAUDE_CODE_SESSION_ID:0:8}…"
+		exit 0
+	fi
+	case "$mode" in
+	up | layout | resume)
+		rec_id="$(read_ext_lead_id)"
+		[ -z "$rec_id" ] || [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ] || die_ext_lead_mismatch "$rec_id"
+		;;
+	esac
+fi
 
 jget() {
 	python3 -c 'import sys,json
@@ -107,12 +162,55 @@ retry() {
 	done
 }
 
-self_json="$(herdr pane get "$HERDR_PANE_ID" 2>/dev/null)" || die "현재 pane $HERDR_PANE_ID 를 읽지 못했다"
-self_cwd="$(printf '%s' "$self_json" | jget result.pane.foreground_cwd)"
-[ -n "$self_cwd" ] || self_cwd="$(printf '%s' "$self_json" | jget result.pane.cwd)"
-under_root "$self_cwd" || die "pane $HERDR_PANE_ID 의 cwd($self_cwd)가 $ROOT 밖이다; 아무것도 하지 않음"
-WS="$(printf '%s' "$self_json" | jget result.pane.workspace_id)"
-[ -n "$WS" ] || die "현재 pane의 작업공간을 알 수 없다"
+# 외부 모드: herdr pane list와 팀원(cf-impl·cf-critic) 소유 pane에서 작업공간을 찾는다.
+# shellcheck disable=SC2016
+PY_FIND_WS='import sys,os,json
+root=sys.argv[1]
+labels=set(sys.argv[2:4])
+def load(s,*path):
+    try: d=json.loads(s)
+    except Exception: return None
+    for k in path: d=d.get(k) if isinstance(d,dict) else None
+    return d
+panes=load(os.environ.get("PANES_JSON",""),"result","panes") or []
+by_id={p.get("pane_id"):p for p in panes if isinstance(p,dict) and p.get("pane_id")}
+def inroot(p): return ((p.get("foreground_cwd") or p.get("cwd") or "").rstrip("/")+"/").startswith(root+"/")
+wss=set()
+for env_k in ("IMPL_OWNER_JSON","CRITIC_OWNER_JSON"):
+    a=load(os.environ.get(env_k,""),"result","agent")
+    if isinstance(a,dict) and a.get("pane_id"):
+        p=dict(a); p.update(by_id.get(a["pane_id"],{}))
+        if p.get("workspace_id"): wss.add(p["workspace_id"])
+for p in panes:
+    if p.get("label") in labels and inroot(p) and p.get("workspace_id"):
+        wss.add(p["workspace_id"])
+wss=sorted(wss)
+if len(wss)==1: print("ok\t"+wss[0])
+elif len(wss)==0: print("none\t")
+else: print("multi\t"+", ".join(wss))'
+
+PANES_JSON=""
+NO_MEMBER_PANE_MSG="CF 팀원 pane을 찾지 못했다; Herdr에서 작업공간과 label 「CF 구현 · agy」 빈 셸 pane을 먼저 만든다"
+if [ "$EXT_LEAD" = 1 ]; then
+	PANES_JSON="$(herdr pane list 2>/dev/null)" || die "herdr pane list 실패"
+	impl_owner="$(herdr agent get "${SEAT_NAME[1]}" 2>/dev/null)" || impl_owner=""
+	critic_owner="$(herdr agent get "${SEAT_NAME[2]}" 2>/dev/null)" || critic_owner=""
+	ws_out="$(PANES_JSON="$PANES_JSON" IMPL_OWNER_JSON="$impl_owner" CRITIC_OWNER_JSON="$critic_owner" \
+		python3 -c "$PY_FIND_WS" "$ROOT" "${SEAT_LABEL[1]}" "${SEAT_LABEL[2]}")" || die "작업공간 탐색 실패"
+	IFS=$'\t' read -r ws_st ws_val <<<"$ws_out"
+	case "$ws_st" in
+	ok) WS="$ws_val" ;;
+	none) die "$NO_MEMBER_PANE_MSG" ;;
+	*) die "CF 팀원 pane이 여러 작업공간에 있다: $ws_val; 아무것도 하지 않음" ;;
+	esac
+else
+	self_json="$(herdr pane get "$HERDR_PANE_ID" 2>/dev/null)" || die "현재 pane $HERDR_PANE_ID 를 읽지 못했다"
+	self_cwd="$(printf '%s' "$self_json" | jget result.pane.foreground_cwd)"
+	[ -n "$self_cwd" ] || self_cwd="$(printf '%s' "$self_json" | jget result.pane.cwd)"
+	under_root "$self_cwd" || die "pane $HERDR_PANE_ID 의 cwd($self_cwd)가 $ROOT 밖이다; 아무것도 하지 않음"
+	WS="$(printf '%s' "$self_json" | jget result.pane.workspace_id)"
+	[ -n "$WS" ] || die "현재 pane의 작업공간을 알 수 없다"
+fi
 
 # --- 석 분류 ---
 # 상태: alive(이름 확보·agent 실행 중) / unnamed(label·종류 일치 agent가 이름 없이 실행 중)
@@ -156,7 +254,6 @@ S_LABEL=()
 S_NOTE=()
 S_OPT_NOTE=()
 opts_ok=1
-PANES_JSON=""
 
 # 점검 전용: 팀원 pane의 실제 실행 옵션을 SEAT_CMD 기대 단위와 비교한다.
 # 비밀 값 보호: 출력에는 기대 단위(SEAT_CMD에서 온 것)와 고정 사유만 쓰고, 실제 argv·cmdline·원문 JSON은 출력하지 않는다.
@@ -212,7 +309,15 @@ print("옵션 불일치: "+"; ".join(parts)+" ("+recover+")")
 sys.exit(1)'
 
 check_member_opts() {
-	local i pinfo rc recover note
+	local i pinfo rc recover note rec_id
+	if [ "$EXT_LEAD" = 1 ]; then
+		rec_id="$(read_ext_lead_id)"
+		if [ -z "$rec_id" ]; then
+			S_OPT_NOTE[0]="외부 팀장 기록: 없음"
+		elif [ "$rec_id" != "$CLAUDE_CODE_SESSION_ID" ]; then
+			S_OPT_NOTE[0]="외부 팀장 기록: 다른 세션(${rec_id:0:8}…)"
+		fi
+	fi
 	for i in 1 2; do
 		case "${S_STATUS[$i]}" in alive | unnamed) ;; *) continue ;; esac
 		if [ "$i" = 1 ]; then
@@ -231,9 +336,21 @@ check_member_opts() {
 }
 
 classify_all() {
-	local i owner_json out
-	PANES_JSON="$(herdr pane list 2>/dev/null)" || die "herdr pane list 실패"
+	local i owner_json out lead_pane
+	[ -n "$PANES_JSON" ] || PANES_JSON="$(herdr pane list 2>/dev/null)" || die "herdr pane list 실패"
 	for i in 0 1 2; do
+		if [ "$EXT_LEAD" = 1 ] && [ "$i" = 0 ]; then
+			S_STATUS[0]=external
+			S_PANE[0]=""
+			S_INWS[0]=0
+			S_AGENT[0]="${SEAT_KIND[0]}"
+			S_ASTATUS[0]="이 세션"
+			S_LABEL[0]=""
+			S_NOTE[0]=""
+			lead_pane="$(herdr agent get "${SEAT_NAME[0]}" 2>/dev/null | jget result.agent.pane_id)"
+			[ -z "$lead_pane" ] || S_NOTE[0]="Herdr 안 cf-lead($lead_pane)가 살아 있음 — 이관 중이면 한쪽만 팀원에게 입력한다"
+			continue
+		fi
 		owner_json="$(herdr agent get "${SEAT_NAME[$i]}" 2>/dev/null)" || owner_json=""
 		out="$(PANES_JSON="$PANES_JSON" OWNER_JSON="$owner_json" python3 -c "$PY_CLASSIFY" \
 			"$ROOT" "$WS" "${SEAT_LABEL[$i]}" "${SEAT_KIND[$i]}")" || die "상태 분류 실패: ${SEAT_NAME[$i]}"
@@ -244,6 +361,7 @@ classify_all() {
 action_of() { # idx
 	local i=$1
 	if [ "$i" = 0 ]; then
+		[ "$EXT_LEAD" = 1 ] && { echo "유지"; return; }
 		case "${S_STATUS[0]}" in
 		alive) [ "${S_PANE[0]}" = "$HERDR_PANE_ID" ] && echo "유지" || echo "--up 거부(다른 pane 소유)" ;;
 		conflict) echo "--up 거부(충돌)" ;;
@@ -262,7 +380,7 @@ action_of() { # idx
 
 print_table() {
 	local i st
-	echo "team-up 점검 — 저장소 $ROOT · 작업공간 $WS · 현재 pane $HERDR_PANE_ID"
+	echo "team-up 점검 — 저장소 $ROOT · 작업공간 $WS · 현재 pane ${HERDR_PANE_ID:-외부}"
 	printf '%-7s %-11s %-7s %-7s %-17s %-20s %s\n' 석 이름 pane agent 상태 label "--up 조치"
 	for i in 0 1 2; do
 		st="${S_STATUS[$i]}"
@@ -276,7 +394,7 @@ print_table() {
 
 all_alive() {
 	local i
-	[ "${S_STATUS[0]}" = alive ] || return 1
+	[ "$EXT_LEAD" = 1 ] || [ "${S_STATUS[0]}" = alive ] || return 1
 	for i in 1 2; do [ "${S_STATUS[$i]}" = alive ] || return 1; done
 }
 
@@ -353,6 +471,7 @@ place_new() { # idx
 			return 0
 		fi
 	done
+	[ "$EXT_LEAD" = 0 ] || die "$NO_MEMBER_PANE_MSG"
 	split_pane "$HERDR_PANE_ID" down "$LEAD_RATIO"
 }
 
@@ -484,6 +603,31 @@ if down is None or (C and right is None):
 else: print("ok %d %s %s %s" % (crit,down,right if C else "-",tab))' "$1" "$2" "${3:-}"
 }
 
+# 외부 모드 배치 상태 → "상태 줄비율 탭" (layout을 읽지 못하면 빈 값)
+#   상태: ok(impl|critic이 같은 탭에서 좌우로 붙어 있고 사이에 다른 pane 없음) / away(다른 탭) / bad(그 밖의 모양)
+# shellcheck disable=SC2016
+ext_layout_state() { # impl critic
+	herdr pane layout --pane "$1" 2>/dev/null | python3 -c 'import sys,json
+impl,critic=sys.argv[1:3]
+try:
+    l=json.load(sys.stdin)["result"]["layout"]
+    r={p["pane_id"]:p["rect"] for p in l["panes"]}
+    splits=l.get("splits") or []
+    tab=l.get("tab_id") or "-"
+except Exception: sys.exit(0)
+def box(q): return (q["x"],q["y"],q["width"],q["height"])
+if impl not in r: sys.exit(0)
+if not critic or critic not in r: print("away - "+tab); sys.exit(0)
+M,C=box(r[impl]),box(r[critic])
+right=None
+if C[0]==M[0]+M[2] and C[1]==M[1] and C[3]==M[3]:
+    for s in splits:
+        if s.get("direction")=="right" and box(s["rect"])==(M[0],M[1],M[2]+C[2],M[3]):
+            right=s["ratio"]; break
+if right is None: print("bad - "+tab)
+else: print("ok %s %s" % (right,tab))' "$1" "$2"
+}
+
 ratios_ok() { # 아래비율 줄비율("-"이면 보지 않음)
 	python3 -c 'import sys
 d,r,lr,rr=sys.argv[1:5]
@@ -604,6 +748,56 @@ layout_seats() {
 	[ -n "${S_PANE[0]}" ] && [ "${S_INWS[0]}" = 1 ] && [ -n "$L_IMPL" ]
 }
 
+# 외부 모드 배치 보정: impl·critic이 같은 탭에서 좌우로 붙어 있을 때만 비율을 ROW_RATIO로 맞춘다.
+# 그 밖의 모양(다른 탭, 섞인 pane, 한 석만 있음)은 아무것도 옮기지 않고 안내 후 1을 돌려준다.
+apply_ext_layout() {
+	local impl="" critic="" rc fail=0
+	usable_anchor 1 && impl="${S_PANE[1]}"
+	usable_anchor 2 && critic="${S_PANE[2]}"
+	if [ -z "$impl" ] || [ -z "$critic" ]; then
+		warn "배치: 외부 팀장 모드에서는 cf-impl과 cf-critic 두 석이 모두 있어야 배치를 맞출 수 있음; 아무것도 옮기지 않음"
+		return 1
+	fi
+	# shellcheck disable=SC2046
+	set -- $(ext_layout_state "$impl" "$critic")
+	case "${1:-}" in
+	ok) ;;
+	away)
+		warn "배치: cf-impl($impl)과 cf-critic($critic)이 다른 탭에 있어 옮기지 않음; 같은 탭에 좌우로 둔 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+		return 1
+		;;
+	bad)
+		warn "배치: cf-impl($impl)과 cf-critic($critic)이 같은 탭에서 좌우로 붙어 있지 않아 옮기지 않음; 직접 정리한 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+		return 1
+		;;
+	*)
+		warn "배치: 팀원 탭 layout을 읽지 못함; 아무것도 옮기지 않음"
+		return 1
+		;;
+	esac
+	set_ratio "$2" "$ROW_RATIO" "$impl" right "$critic" left
+	rc=$?
+	case $rc in
+	1) fail=1 ;;
+	3)
+		# shellcheck disable=SC2046
+		set -- $(ext_layout_state "$impl" "$critic")
+		[ "${1:-}" = ok ] || { warn "resize 중 배치가 바뀌어 기준 모양이 아님"; return 1; }
+		;;
+	esac
+	ratios_ok "$LEAD_RATIO" "$2" || fail=1
+	if [ "$fail" != 0 ]; then
+		warn "비율 미도달 또는 resize 실패: impl/critic $2 (기준 $ROW_RATIO ±0.01)"
+		return 1
+	fi
+	if [ "$layout_status" != 0 ]; then
+		warn "배치: 이동 단계에서 오류가 있었음; herdr pane layout 확인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+		return 1
+	fi
+	echo "배치: 아래 impl $impl | critic $critic($ROW_RATIO)"
+	return 0
+}
+
 # 팀장(이 pane)·impl이 같은 탭이면 기준으로 맞춘다. critic은 같은 탭일 때만 함께 맞춘다.
 # 반환: 0 맞춤, 1 실패(안내 출력), 4 해당 없음(impl이 다른 탭 — 옮기지 않음)
 apply_layout() {
@@ -655,6 +849,10 @@ apply_layout() {
 # --up·--resume-impl 끝: 배치 실패는 기동 결과를 되돌리지 않고 종료 코드만 비0으로 만든다.
 finish_layout() {
 	local rc
+	if [ "$EXT_LEAD" = 1 ]; then
+		apply_ext_layout
+		return $?
+	fi
 	layout_seats || return "$layout_status"
 	apply_layout
 	rc=$?
@@ -663,7 +861,36 @@ finish_layout() {
 
 # 점검(읽기 전용): 기준과 다르면 경고만 낸다. 종료 코드에 영향 없음.
 check_layout() {
-	local lead="${S_PANE[0]}" fix="고치려면 팀장 pane에서 scripts/team-up.sh --layout"
+	local lead="${S_PANE[0]}" fix="고치려면 팀장 pane에서 scripts/team-up.sh --layout" impl="" critic=""
+	if [ "$EXT_LEAD" = 1 ]; then
+		fix="고치려면 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+		usable_anchor 1 && impl="${S_PANE[1]}"
+		usable_anchor 2 && critic="${S_PANE[2]}"
+		if [ -z "$impl" ] || [ -z "$critic" ]; then
+			warn "배치: cf-impl과 cf-critic 두 석이 모두 있어야 배치를 확인할 수 있음"
+			warn "$fix"
+			return 0
+		fi
+		# shellcheck disable=SC2046
+		set -- $(ext_layout_state "$impl" "$critic")
+		case "${1:-}" in
+		ok)
+			ratios_ok "$LEAD_RATIO" "$2" && return 0
+			warn "배치 비율이 기준과 다름: impl/critic $2 (기준 $ROW_RATIO ±0.01)"
+			;;
+		away)
+			fix="cf-impl과 cf-critic을 같은 탭에 좌우로 둔 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+			warn "배치: cf-impl($impl)과 cf-critic($critic)이 다른 탭에 있음"
+			;;
+		bad)
+			fix="cf-impl과 cf-critic을 같은 탭에서 좌우로 붙인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --layout"
+			warn "배치가 기준(impl|critic 좌우 인접)과 다름"
+			;;
+		*) return 0 ;;
+		esac
+		warn "$fix"
+		return 0
+	fi
 	layout_seats || return 0
 	# shellcheck disable=SC2046
 	set -- $(layout_state "$lead" "$L_IMPL" "$L_CRITIC")
@@ -701,13 +928,20 @@ check)
 	exit
 	;;
 up)
-	secure_lead
+	[ "$EXT_LEAD" = 0 ] || usable_anchor 1 || usable_anchor 2 || die "$NO_MEMBER_PANE_MSG"
+	ensure_external_lead_lock
+	[ "$EXT_LEAD" = 1 ] || secure_lead
 	fail=0
 	for i in 1 2; do ensure_member "$i" "${SEAT_CMD[$i]}" || fail=1; done
 	finish_layout || fail=1
 	exit "$fail"
 	;;
 layout)
+	ensure_external_lead_lock
+	if [ "$EXT_LEAD" = 1 ]; then
+		apply_ext_layout || exit 1
+		exit 0
+	fi
 	[ "${S_STATUS[0]}" = alive ] && [ "${S_PANE[0]}" = "$HERDR_PANE_ID" ] ||
 		die "--layout: cf-lead가 이 pane($HERDR_PANE_ID)이 아니다; 아무것도 옮기지 않음"
 	layout_seats || die "--layout: 이 작업공간에 cf-impl pane이 없다; 아무것도 옮기지 않음(scripts/team-up.sh --up)"
@@ -723,7 +957,8 @@ resume)
 	alive | unnamed) die "구현 agy가 이미 ${S_PANE[1]} 에 살아 있다; 복구하지 않음" ;;
 	conflict) die "cf-impl: ${S_NOTE[1]} (${S_PANE[1]}); 복구하지 않음" ;;
 	esac
-	secure_lead
+	ensure_external_lead_lock
+	[ "$EXT_LEAD" = 1 ] || secure_lead
 	fail=0
 	ensure_member 1 "agy --conversation $resume_id --model $IMPL_MODEL --mode accept-edits --sandbox" || fail=1
 	finish_layout || fail=1
