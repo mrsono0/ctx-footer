@@ -5,7 +5,8 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 ## 1. 팀 (상주 3석, 조사는 cf-critic)
 | 이름 | 역할 | 실행 | 권한 |
 |---|---|---|---|
-| `cf-lead` | 팀장 (Claude Code) | `claude` (opus) — Herdr 안 pane 또는 Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) | 저장소 파일을 쓰지 않는다. 배정·사용자 승인·최종 확인 |
+| `cf-lead` | 팀장 (Claude Code) | `claude` (opus) — Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) — 사용자 지정 공식 팀장(2026-10-17). 되돌리면 Herdr 안 pane(§7) | 저장소 파일을 쓰지 않는다. 배정·사용자 승인·최종 확인 |
+| `cf-vice` | 부팀장 (Claude Code) | `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`) | 저장소 파일을 쓰지 않고 팀원에게 입력하지 않는다. 읽기 전용 감시·독립 재확인·초안 검토 의견, 팀장과 세션 간 메시지(AGENTS.md §1·§5) |
 | `cf-impl` | 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` | **유일한 쓰기·커밋 담당**(sandbox 켬, 전역 `toolPermission` `proceed-in-sandbox`, 2026-10-15 교체 승인 — 이전 GJC `gjc --mpreset opus5-codex56-pro`) |
 | `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
 
@@ -14,7 +15,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 
 ## 2. 작업공간 배치
 - herdr 새 작업공간 `ctx-footer`(LFI의 wH와 분리). cwd = `/Users/mrsono0/LectureForgeProjects/ctx-footer`.
-- 팀장 세션은 하나다: Herdr 안 `cf-lead` pane(화면 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`) 또는 외부 팀장(herdr 작업공간에는 팀원만 좌우 `cf-impl | cf-critic`). 이관 중 두 세션이 함께 있으면 사용자가 정한 쪽만 팀원에게 입력하고 다른 쪽은 읽기만 하며, `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀원에게 어떤 입력도 하지 않는다. agent 이름은 전역이라 접두어 `cf-`로 LFI(`lfi-`)와 겹치지 않게 한다.
+- 팀장 세션은 하나다: 지금은 외부 팀장(데스크톱 세션)이 팀장이고 작업공간은 위 `cf-vice`(부팀장), 아래 줄 가로 `cf-impl | cf-critic`. 팀원에게 입력하는 것은 팀장뿐이다. Herdr 안 팀장 형태(위 `cf-lead`)는 되돌리기 때 쓴다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀원에게 어떤 입력도 하지 않는다. agent 이름은 전역이라 접두어 `cf-`로 LFI(`lfi-`)와 겹치지 않게 한다.
 
 ## 3. 팀 규칙 파일 (P1에서 작성, LFI 교훈 반영)
 - `AGENTS.md`(규칙 정본, 「팀 협업 규약」 포함) + `CLAUDE.md`(`@AGENTS.md` 참조만).

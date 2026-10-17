@@ -24,12 +24,13 @@
 | 이름 | 실행 | 맡는 일 | 하지 않는 일 |
 |---|---|---|---|
 | 사용자 | — | 요구·범위, 계획 확정, 커밋·태그·릴리스, 규칙·전역 설정 변경 승인(승인된 커밋의 `main` 푸시는 cf-lead에 위임) | — |
-| `cf-lead` 팀장 (Claude Code) | `claude` (opus) — Herdr 안 pane 또는 Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
+| `cf-lead` 팀장 (Claude Code) | `claude` (opus) — Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) — 사용자 지정 공식 팀장(2026-10-17). 되돌리면 Herdr 안 pane(§7) | 단계 순서·우선순위, 배정(DIRECTIVE), 팀원 감시·교정, 치명적이지 않은 막힘 판단·해결(팀원의 범위 좁은 권한 프롬프트 1회 허용 포함), 팀원 요구의 전제 검증, critic 조사 인용의 원문 대조, 완료 보고 재검증, 사용자 보고·승인 요청, 규칙 파일 초안 | 저장소 파일 쓰기·커밋, 리뷰 판정, 리뷰 중계, 사용자 대신 승인, 회차 상한 확대 |
+| `cf-vice` 부팀장 (Claude Code) | `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`, `CF_EXTERNAL_LEAD` 없음) | 팀원 화면·상태의 읽기 전용 감시, 팀장의 배정·재검증·커밋·푸시의 독립 재확인, 팀장 초안 검토 의견, 이상을 팀장에게 세션 간 메시지로 알림 | 팀원에게 입력(prompt·키·rename), 확인창 응답, 바꾸는 `team-up.sh` 모드(Herdr 재시작·재부팅 뒤 팀원 복구 `--up`·`--resume-impl` 포함 — 팀장만 한다), 저장소 쓰기·커밋·푸시, 사용자 승인 전달·대행 |
 | `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` (파일 편집은 확인 없이 — 사용자 승인 2026-10-15 「2. 승인」, GJCH 시험 근거. sandbox 켬 — 셸 승인 정책은 agy 전역 설정 `~/.gemini/antigravity-cli/settings.json`의 `"toolPermission": "proceed-in-sandbox"`(sandbox 안 명령은 자동, 밖 실행은 확인창 — 사용자 승인 2026-10-15). `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
 | `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"` | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
 
 - 모두 이 저장소에서 실행한다. 기동·복구는 `scripts/team-up.sh`(외부 팀장은 `CF_EXTERNAL_LEAD=1 scripts/team-up.sh …`).
-- **팀장 세션은 하나다.** Herdr 안 `cf-lead` pane(화면 3분할: 위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`) 또는 외부 팀장(herdr 작업공간에는 팀원만 좌우 `cf-impl | cf-critic`). 이관 중 두 세션이 함께 있으면 사용자가 정한 쪽만 팀원에게 입력하고, 다른 쪽은 읽기만 한다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀장이 아니다 — 팀원에게 어떤 입력도 하지 않는다.
+- **팀장 세션은 하나다.** 지금은 외부 팀장(데스크톱 세션)이 팀장이고, 팀 작업공간에는 위 `cf-vice`(부팀장), 아래 줄 가로 `cf-impl | cf-critic`이 있다. 팀원에게 입력하는 것은 팀장뿐이다. Herdr 안 팀장 형태(위 `cf-lead`, 아래 줄 가로 `cf-impl | cf-critic`)는 §7 되돌리기 때 쓴다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀장이 아니다 — 팀원에게 어떤 입력도 하지 않는다.
 - 외부 팀장의 데스크톱 설정(worktree 끄기, 환경변수, herdr 명령 권한)은 사용자가 한다. 폴더 신뢰 창은 사용자가 답한다. `CF_EXTERNAL_LEAD=1`은 데스크톱 「로컬 환경」 설정이라 같은 환경으로 연 다른 데스크톱 세션도 받는다. 그래서 `team-up.sh` 외부 모드는 처음 쓴 세션을 `.local/team/external-lead`에 기록하고, 다른 세션이면 바꾸는 명령을 거부한다. 기록을 다른 세션으로 바꾸는 `--claim-external`은 사용자 승인 뒤에만 쓴다.
 - agent 이름은 herdr 전역이다. 접두어 `cf-`만 쓰고 다른 팀(`lfi-`·`lfai-` 등)의 pane·이름은 건드리지 않는다. 주소는 agent 이름으로 쓰고 pane ID는 `herdr agent list`로 확인한다(재시작 때 바뀐다).
 - 팀장 세션을 시작·재개하면 먼저 `scripts/team-up.sh` 점검을 돌린다 — 팀원 실행 옵션도 비교하므로(Herdr 재시작·재부팅 뒤 옵션이 빠진 복구) `↳ 옵션 불일치`·`↳ 옵션 판정 불가`가 나오면 일보다 복구가 먼저다. **작업 시작·재개 전 팀원 생존을 확인하고, 종료돼 있으면 혼자 진행하지 말고 먼저 복구한다.** 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
@@ -80,7 +81,7 @@
 - 팀원 사이에서 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
 - 팀원 메시지는 받는 쪽 입력창에 사용자 입력처럼 들어온다. 권위 1을 적용한다.
 - **권한·승인 대화상자**: 팀원은 다른 팀원의 대화상자에 답하지 않고 lead에 `BLOCKER`. lead는 내용을 읽고 판단한다 — 읽기 전용·팀 내부 전송·동결 사본의 테스트처럼 범위가 좁은 것은 1회 허용으로 답하고, 영구 허용(「don't ask again」 등 전역에 저장될 수 있는 것)·「사용자 승인」 항목·전역 설정·되돌리기 어려운 것은 사용자에게 묻는다. 확인창 내용이 잘려 보이면 팀장은 `herdr pane zoom <pane>` 뒤 펼친다 — agy 명령 확인창은 `ctrl+g`, MCP 도구 확인창은 `ctrl+o` — 그리고 `esc`·zoom 원복. MCP 도구는 서버 이름까지 포함한 전체 식별자를 확인한다(`context7/…`과 `wf3-code-research_context7/…`는 다르다). 외부 팀장도 같다.
-- 이관 중 Herdr 안 `cf-lead`와 외부 팀장은 Claude 세션 간 메시지(`SendMessage`·`ListAgents`)로 연락한다. 이 메시지도 사용자 승인이 아니다(권위 1).
+- 팀장과 부팀장은 Claude 세션 간 메시지(`SendMessage`·`ListAgents`)로 연락한다. 부팀장의 메시지는 사용자 승인이 아니다(권위 1). 부팀장 pane에서 돌린 `scripts/team-up.sh` 점검은 Herdr 모드라 lead 행이 `cf-lead` 없음으로 나오고 종료 코드가 1이다(`scripts/team-up.sh` classify_all·all_alive) — 부팀장은 팀원 행과 `↳ 옵션` 줄만 본다. 부팀장 pane의 `/clear`는 SessionStart 훅(`--hook-clear`)이 label 불일치로 아무것도 하지 않고 실패로 끝나며 `cf-vice` 이름이 풀릴 수 있다 — 팀장이 `herdr agent rename <pane> cf-vice`로 다시 붙인다. Herdr 재시작·재부팅 뒤 팀원 복구(`--resume-impl`·`--up`)는 팀장만 한다 — 부팀장 pane에서 `--up`을 돌리면 그 pane을 `cf-lead`로 다시 잡아 팀장이 둘이 된다(`secure_lead`). 부팀장은 점검 결과를 팀장에게 알리기만 한다.
 
 ### 6. 일하는 방식
 - **DIRECTIVE 6칸**: 목표(계획서 절과 한 문장) / 범위(쓰기 허용 파일 3–5개, 밖이 필요하면 `ASK`) / 완료 조건 / 예산(회차 상한, 시간) / 하지 말 것 / Context7(확인할 라이브러리·주제와 기록 항목, 필요 없으면 「해당 없음」). 상대는 대화 이력이 없다고 가정하고 배경 경로를 붙인다.
@@ -101,7 +102,7 @@
 - 팀장은 팀원 창을 감시한다(권한 대화상자는 바로, 진척은 6분 간격). 구현자(cf-impl)는 단계 끝과 30분 무보고 시 `REPORT`.
 - 개입 시점(이때만): ① 단계 시작 DIRECTIVE ② 완료 보고 재검증 — 계획된 검사를 같은 입력으로 다시 돌리고 해시를 대조 ③ `BLOCKER`·`ESCALATE`·`NEED-APPROVAL`·회차 상한 도달 ④ 이탈(범위 밖 수정, 리뷰 입력 수정, 규칙 위반) ⑤ 사용자 승인이 필요한 일. 그 사이 리뷰·수정·회차는 impl과 critic이 직접 돈다.
 - 결정·진행 상태는 docs/05와 회차 폴더에 남긴다. 대화 기록에만 있는 결정은 없는 것으로 본다.
-- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 팀 작업공간에 pane을 열어 `claude`를 띄우고 → 그 pane에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로) → `scripts/team-up.sh --layout`.
+- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 부팀장 pane(없으면 팀 작업공간에 pane을 열어 `claude`를 띄운 pane)에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로, label `CF 팀장 · Claude`) → `scripts/team-up.sh --layout`.
 
 ## 안전
 - `rm -rf`, `kill`/`pkill`/`killall`은 직접 실행하지 않는다. 테스트 스크립트 안에서 자기 자식 프로세스·자기 임시 경로만 정리한다(`trap`, 프로세스 그룹).
