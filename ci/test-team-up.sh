@@ -3,6 +3,9 @@
 #   ci/test-team-up.sh                    기본 bash로 실행
 #   TEAM_UP_BASH=/bin/bash ci/test-team-up.sh   다른 bash(예: macOS 3.2)로 스크립트 실행
 set -u
+# 호출한 셸의 팀 환경(외부 팀장 데스크톱 세션의 CF_EXTERNAL_LEAD·CLAUDE_CODE_SESSION_ID, Herdr pane의 HERDR_*)이
+# 시험에 새지 않게 스크립트가 읽는 변수를 모두 비운다. 각 시험은 필요한 값만 env로 넣는다(extlead-r5).
+unset CF_EXTERNAL_LEAD CLAUDE_CODE_SESSION_ID CF_RETRIES CF_RETRY_SLEEP HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SCRIPT="$ROOT/scripts/team-up.sh"
