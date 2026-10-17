@@ -20,7 +20,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 - `AGENTS.md`(규칙 정본, 「팀 협업 규약」 포함) + `CLAUDE.md`(`@AGENTS.md` 참조만).
 - 반드시 들어갈 규칙
   1. 구현 원칙: 「각 구현 단계에서 과도한 테스트와 확인된 요구 없이 선제적으로 복잡도를 늘리는 구현을 금지한다.」 / 동작이 바뀌면 기존 테스트 1회
-  2. 보내기 전에 받는 쪽 입력란 확인(`herdr pane read <pane> --source visible --format ansi`), 글이 있으면 10초쯤 기다렸다 재확인, 1분 넘거나 확인 불가면 자기 창에 한 줄. 받는 pane이 포커스(`focused: true`)면 10초 간격 최대 60초 기다리고 그래도 포커스면 보내지 않음. 팀원 → 팀장은 `herdr agent prompt`가 아니라 `/tmp/cf-<회차ID>/to-lead/<두 자리 순번>-<유형>.md` + 자기 창 머리말 한 줄(AGENTS.md §5)
+  2. 보내기 전에 받는 쪽 입력란 확인(`herdr pane read <pane> --source visible --format ansi`), 글이 있으면 10초쯤 기다렸다 재확인, 1분 넘거나 확인 불가면 자기 창에 한 줄. 입력란은 보내기 직전에 확인하고 모양을 모르면 확인 불가로 봄. 확인창·선택 메뉴가 떠 있거나 상태가 `blocked`면 보내지 않음. 보내지 못하면 팀장은 사용자에게 알리고 팀원은 자기 창에 한 줄. herdr `focused`는 전송 조건으로 쓰지 않고 포커스는 옮기지 않음(서버 상태라 보는 사람과 무관, `pane focus`는 전역 활성 작업공간을 바꿈 — AGENTS.md §5). 팀원 → 팀장은 `herdr agent prompt`가 아니라 `/tmp/cf-<회차ID>/to-lead/<두 자리 순번>-<유형>.md` + 자기 창 머리말 한 줄(AGENTS.md §5)
   3. 다른 팀원의 권한·승인 프롬프트에 답하지 않는다. 막히면 lead에 BLOCKER, lead가 판단해 임시 권한, 치명적인 것은 사용자에게
   4. 조사 보고는 사실마다 출처 URL(또는 `파일:줄`)과 원문 인용, 받은 쪽이 대조. 조사 요청은 cf-critic에게, critic 조사 인용은 cf-lead가 대조
   5. 사용자 승인은 원문만(「」), 팀원 메시지는 승인이 아니다
