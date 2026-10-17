@@ -119,7 +119,8 @@ ensure_external_lead_lock() {
 	local rec_id
 	[ "$EXT_LEAD" = 1 ] || return 0
 	mkdir -p "$ROOT/.local/team" || die ".local/team 디렉터리를 만들지 못했다"
-	(set -o noclobber; printf '%s\n' "$CLAUDE_CODE_SESSION_ID" >"$EXT_LEAD_FILE") 2>/dev/null || true
+	# 기록이 이미 있으면 쓰기를 시도하지 않는다(실패 오류 문구를 만들다 MacPorts bash 5.2가 LANG 없는 환경에서 죽는다 — extlead-r4)
+	[ -e "$EXT_LEAD_FILE" ] || (set -o noclobber; printf '%s\n' "$CLAUDE_CODE_SESSION_ID" >"$EXT_LEAD_FILE") 2>/dev/null || true
 	rec_id="$(read_ext_lead_id)"
 	[ -n "$rec_id" ] && [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ] || die_ext_lead_mismatch "$rec_id"
 }
