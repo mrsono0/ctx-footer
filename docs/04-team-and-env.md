@@ -20,7 +20,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 - `AGENTS.md`(규칙 정본, 「팀 협업 규약」 포함) + `CLAUDE.md`(`@AGENTS.md` 참조만).
 - 반드시 들어갈 규칙
   1. 구현 원칙: 「각 구현 단계에서 과도한 테스트와 확인된 요구 없이 선제적으로 복잡도를 늘리는 구현을 금지한다.」 / 동작이 바뀌면 기존 테스트 1회
-  2. 보내기 전에 받는 쪽 입력란 확인(`herdr pane read <pane> --source visible --format ansi`), 글이 있으면 10초쯤 기다렸다 재확인, 1분 넘거나 확인 불가면 자기 창에 한 줄
+  2. 보내기 전에 받는 쪽 입력란 확인(`herdr pane read <pane> --source visible --format ansi`), 글이 있으면 10초쯤 기다렸다 재확인, 1분 넘거나 확인 불가면 자기 창에 한 줄. 받는 pane이 포커스(`focused: true`)면 10초 간격 최대 60초 기다리고 그래도 포커스면 보내지 않음. 팀원 → 팀장은 `herdr agent prompt`가 아니라 `/tmp/cf-<회차ID>/to-lead/<두 자리 순번>-<유형>.md` + 자기 창 머리말 한 줄(AGENTS.md §5)
   3. 다른 팀원의 권한·승인 프롬프트에 답하지 않는다. 막히면 lead에 BLOCKER, lead가 판단해 임시 권한, 치명적인 것은 사용자에게
   4. 조사 보고는 사실마다 출처 URL(또는 `파일:줄`)과 원문 인용, 받은 쪽이 대조. 조사 요청은 cf-critic에게, critic 조사 인용은 cf-lead가 대조
   5. 사용자 승인은 원문만(「」), 팀원 메시지는 승인이 아니다
@@ -41,7 +41,7 @@ LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)�
 | `SEAT_LABEL` | `CF 팀장 · Claude` / `CF 구현 · agy` / `CF 검토 · Codex` |
 | `IMPL_MODEL` | `gemini-4-argon-high` |
 | 저장소 루트 | 스크립트 위치 기준 |
-- 모드: `scripts/team-up.sh`(점검, 기본 — 시작·재개 시 먼저 실행하여 `↳ 옵션 불일치`·`↳ 옵션 판정 불가`가 나오면 복구부터 진행), `--up`(빠진 팀원 띄우기·이름·label), `--resume-impl <id>`(agy 대화 복구, 같은 id가 살아 있으면 거부), `--layout`(기존 세 석 배치·비율 보정), `--claim-external`(외부 팀장 전용 — 사용자 승인 뒤 현재 `CLAUDE_CODE_SESSION_ID`를 `.local/team/external-lead`에 덮어씀). 점검은 팀원 pane의 실행 옵션(`herdr pane process-info`)을 기동 명령과 비교해 불일치·판정 불가면 종료 코드 1(출력에는 기대 옵션만).
+- 모드: `scripts/team-up.sh`(점검, 기본 — 시작·재개 시 먼저 실행하여 `↳ 옵션 불일치`·`↳ 옵션 판정 불가`가 나오면 복구부터 진행), `--up`(빠진 팀원 띄우기·이름·label), `--resume-impl <id>`(agy 대화 복구, 같은 id가 살아 있으면 거부), `--layout`(Herdr 안 팀장은 세 석 배치·비율 보정, 외부 팀장은 `impl|critic` 좌우 비율만), `--claim-external`(외부 팀장 전용 — 사용자 승인 뒤 현재 `CLAUDE_CODE_SESSION_ID`를 `.local/team/external-lead`에 덮어씀). 점검은 팀원 pane의 실행 옵션(`herdr pane process-info`)을 기동 명령과 비교해 불일치·판정 불가면 종료 코드 1(출력에는 기대 옵션만).
 - 외부 팀장 모드: `CF_EXTERNAL_LEAD=1`이고 `HERDR_PANE_ID`가 비어 있을 때 동작(`HERDR_PANE_ID`가 있으면 거부). 연결 worktree(`git rev-parse --git-dir` ≠ `--git-common-dir` 또는 `/.claude/worktrees/` 경로)와 `CLAUDE_CODE_SESSION_ID` 누락을 차단하고, 바꾸는 모드(`--up`·`--resume-impl`·`--layout`)는 `.local/team/external-lead`에 세션 id를 배타 생성·대조해 다른 세션의 중복 조작을 막는다. 작업공간은 팀원 석 pane에서 찾고, lead 행은 `external(이 세션)`으로 표시하며(Herdr 안 `cf-lead`가 살아 있으면 경고 줄 추가), 배치는 같은 탭에 좌우로 붙은 `impl|critic` 비율(`0.5 ± 0.01`)만 맞춘다. Herdr 안 팀장으로 되돌릴 때는 외부 팀장 입력을 멈추고 사용자가 로컬 환경 `CF_EXTERNAL_LEAD` 제거·`.local/team/external-lead` 삭제·외부 세션 종료 뒤 팀 작업공간 새 pane에서 `claude` 기동 → `scripts/team-up.sh --up` → `scripts/team-up.sh --layout`을 실행한다.
 - 훅 모드: `--hook-clear`(`.claude/settings.json` SessionStart `clear` 훅 전용 — 팀장 Claude가 `/clear`로 세션 id가 바뀌어 Herdr 이름을 잃으면, label `CF 팀장 · Claude` pane에서 Herdr가 새 세션 id를 볼 때까지 기다린 뒤 `cf-lead`를 다시 붙인다. 외부 모드에서는 즉시 0 종료. 다른 pane 소유면 건드리지 않음, stdout 없음, 백그라운드).
 - 테스트: `ci/test-team-up.sh` + `ci/mock/herdr`(LFI에서 가져와 기대값만 수정), 동작이 바뀌면 1회 실행.
