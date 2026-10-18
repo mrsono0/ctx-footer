@@ -20,6 +20,7 @@ DURATION=3600
 INTERVAL=5
 CRITIC_GRACE=60
 VERDICT_TIMEOUT=150
+UNKNOWN_BLOCKED_SEC="${UNKNOWN_BLOCKED_SEC:-20}"
 
 orig_args=("$@")
 if [ "$#" -gt 0 ]; then
@@ -91,7 +92,7 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-for num_val in "${DURATION}" "${INTERVAL}" "${CRITIC_GRACE}" "${VERDICT_TIMEOUT}"; do
+for num_val in "${DURATION}" "${INTERVAL}" "${CRITIC_GRACE}" "${VERDICT_TIMEOUT}" "${UNKNOWN_BLOCKED_SEC}"; do
 	case "${num_val}" in
 	'' | *[!0-9]*) usage ;;
 	esac
@@ -239,13 +240,23 @@ print(f"focused_pane_id={fp} zoomed={zm} active_workspace={ws}")
 '
 }
 
-# 화면 분석: 확인창 구조(상태줄 → ctrl+g 안내 줄 → 4. No, cancel → 1. Yes → Run this command?) 여부 및 agy 하단 6줄 실행 중("● [시각] ... running") 표시 여부
+# 화면 분석: 확인창 구조(명령 확인창 cmd / MCP 확인창 mcp) 여부 및 agy 하단 6줄 실행 중("● [시각] ... running") 표시 여부
 analyze_screen() {
 	local scr="$1"
 	SCR="${scr}" python3 -c '
 import os, re
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 INPUT_SEP_RE = re.compile(r"^\s*[\u2500\u2501\u2550\-]{3,}\s*$")
+MCP_HINT_RE = re.compile(r"^\s*\u2191/\u2193\s+Navigate\s*\u00b7\s*tab\s+Amend\s*$")
+MCP_OPT_PATTERNS = [
+    re.compile(r"^\s*(?:[>❯]\s*)?1\.\s+Yes,\s*allow tool call\s*$"),
+    re.compile(r"^\s*(?:[>❯]\s*)?2\.\s+Yes,\s*and always allow tool\b"),
+    re.compile(r"^\s*(?:[>❯]\s*)?3\.\s+Yes,\s*and always allow tool\b"),
+    re.compile(r"^\s*(?:[>❯]\s*)?4\.\s+No,\s*deny tool call\s*$"),
+    re.compile(r"^\s*(?:[>❯]\s*)?5\.\s+No,\s*and always deny tool\b"),
+    re.compile(r"^\s*(?:[>❯]\s*)?6\.\s+No,\s*and always deny tool\b"),
+]
 
 def inspect_collapsed_prompt(scr):
     raw_lines = scr.splitlines()
@@ -303,13 +314,101 @@ def inspect_collapsed_prompt(scr):
     cursor_on_1 = bool(re.match(r"^\s*[>❯]\s*1\.\s+Yes\b", ne[yes_pos][1]))
     return (True, cursor_on_1)
 
+def inspect_mcp_prompt(scr):
+    clean_scr = ANSI_RE.sub("", scr)
+    raw_lines = clean_scr.splitlines()
+    ne = [(idx, l) for idx, l in enumerate(raw_lines) if l.strip()]
+    if len(ne) < 8:
+        return False
+    if MCP_HINT_RE.match(ne[-1][1]):
+        hint_pos = len(ne) - 1
+    elif (
+        len(ne) >= 9
+        and re.search(r"^\s*esc to cancel\b|accept-edits|shift\+tab", ne[-1][1])
+        and not INPUT_SEP_RE.match(ne[-1][1])
+        and not re.match(r"^\s*[>❯]", ne[-1][1])
+        and MCP_HINT_RE.match(ne[-2][1])
+    ):
+        hint_pos = len(ne) - 2
+        if ne[-1][0] - ne[hint_pos][0] > 2:
+            return False
+    else:
+        return False
+    yes_pos = None
+    for pos in range(hint_pos - 1, 0, -1):
+        if MCP_OPT_PATTERNS[0].match(ne[pos][1]):
+            yes_pos = pos
+            break
+    if yes_pos is None or ne[yes_pos - 1][1].strip() != "Allow calling this tool?":
+        return False
+    q_pos = yes_pos - 1
+    menu_lines = [ne[p][1] for p in range(yes_pos, hint_pos)]
+    opt_positions = []
+    for pat in MCP_OPT_PATTERNS:
+        matches = [i for i, l in enumerate(menu_lines) if pat.match(l)]
+        if len(matches) != 1:
+            return False
+        opt_positions.append(matches[0])
+    if (
+        opt_positions[0] != 0
+        or opt_positions[1] != 1
+        or opt_positions[4] != opt_positions[3] + 1
+        or opt_positions != sorted(opt_positions)
+    ):
+        return False
+    bounds = opt_positions + [len(menu_lines)]
+    expected_suffixes = {
+        1: "in this conversation",
+        2: "(Persist to settings.json)",
+        4: "in this conversation",
+        5: "(Persist to settings.json)",
+    }
+    for idx_opt, suffix in expected_suffixes.items():
+        joined = " ".join(s.strip() for s in menu_lines[bounds[idx_opt]:bounds[idx_opt + 1]])
+        if not joined.endswith(suffix):
+            return False
+    opt_pos_set = set(opt_positions)
+    for i, l in enumerate(menu_lines):
+        if i not in opt_pos_set:
+            if (
+                re.match(r"^\s*[>❯]", l)
+                or re.match(r"^\s*(?:[>❯]\s*)?\d+\.\s+", l)
+                or l.strip() in ("Allow calling this tool?", "Run this command?")
+                or INPUT_SEP_RE.match(l)
+            ):
+                return False
+    cursor_lines = [l for l in menu_lines if re.match(r"^\s*[>❯]", l)]
+    if len(cursor_lines) != 1 or not re.match(r"^\s*[>❯]\s*[1-6]\.\s+", cursor_lines[0]):
+        return False
+    q_raw = ne[q_pos][0]
+    last_menu_raw = ne[hint_pos - 1][0]
+    if any(not raw_lines[r_i].strip() for r_i in range(q_raw, last_menu_raw + 1)):
+        return False
+    if ne[hint_pos][0] - last_menu_raw > 2:
+        return False
+    for r_i in range(q_raw, len(raw_lines) - 1):
+        if INPUT_SEP_RE.match(raw_lines[r_i]) and re.match(r"^\s*[>❯](\s.*)?$", raw_lines[r_i + 1]):
+            return False
+    for p in range(q_pos, len(ne) - 1):
+        if INPUT_SEP_RE.match(ne[p][1]) and re.match(r"^\s*[>❯](\s.*)?$", ne[p + 1][1]):
+            return False
+    for p in range(q_pos, hint_pos + 1):
+        if re.match(r"^\s*[>❯]\s*$", ne[p][1]):
+            return False
+    return True
+
 scr = os.environ["SCR"]
 lines = scr.splitlines()
-has_prompt = "1" if inspect_collapsed_prompt(scr)[0] else "0"
+if inspect_collapsed_prompt(scr)[0]:
+    prompt_kind = "cmd"
+elif inspect_mcp_prompt(scr):
+    prompt_kind = "mcp"
+else:
+    prompt_kind = "0"
 tail_lines = "\n".join(lines[-6:])
 has_running = "1" if re.search(r"\u25cf \[[0-9:]+\].*running", tail_lines) else "0"
 has_new = "1" if re.search(r"(?i)(100%\s+(context\s+)?left|/new)", scr) else "0"
-print(f"{has_prompt}\t{has_running}\t{has_new}")
+print(f"{prompt_kind}\t{has_running}\t{has_new}")
 '
 }
 
@@ -391,6 +490,7 @@ while i < len(entries):
 # --- 초기 기준선(baseline) 기록 ---
 init_ts="$(date +%s)"
 critic_grace_start=0
+unknown_blocked_start=0
 
 base_head="$(read_head)"
 base_refs="$(read_refs_sig)"
@@ -451,11 +551,28 @@ while :; do
 		IFS=$'\t' read -r _ _ critic_new_screen <<<"$(analyze_screen "${critic_scr}")"
 	fi
 
-	# 1. 확인창 감지 (cf-impl: blocked + 화면 끝 15줄 내 질문 줄 및 > 1. Yes 메뉴 줄 / cf-critic: blocked)
-	if [ "${ist}" = "blocked" ] && [ "${impl_prompt}" = "1" ]; then
-		f_info="$(layout_focus_info "${ip}")"
-		printf 'EVENT impl-blocked pane=%s status=%s %s\n' "${ip}" "${ist}" "${f_info}"
-		exit 0
+	# 1. 확인창 감지 (cf-impl: 명령 확인창·MCP 확인창·알 수 없는 blocked 20초 초과 / cf-critic: blocked)
+	if [ "${ist}" = "blocked" ]; then
+		if [ "${impl_prompt}" = "cmd" ]; then
+			f_info="$(layout_focus_info "${ip}")"
+			printf 'EVENT impl-blocked pane=%s status=%s %s\n' "${ip}" "${ist}" "${f_info}"
+			exit 0
+		elif [ "${impl_prompt}" = "mcp" ]; then
+			f_info="$(layout_focus_info "${ip}")"
+			printf 'EVENT impl-blocked kind=mcp pane=%s status=%s %s\n' "${ip}" "${ist}" "${f_info}"
+			exit 0
+		else
+			if [ "${unknown_blocked_start}" -eq 0 ]; then
+				unknown_blocked_start="${now}"
+			fi
+			if [ $((now - unknown_blocked_start)) -gt "${UNKNOWN_BLOCKED_SEC}" ]; then
+				f_info="$(layout_focus_info "${ip}")"
+				printf 'EVENT impl-blocked kind=unknown pane=%s status=%s %s\n' "${ip}" "${ist}" "${f_info}"
+				exit 0
+			fi
+		fi
+	else
+		unknown_blocked_start=0
 	fi
 	if [ "${cst}" = "blocked" ]; then
 		target_cp="${cp}"

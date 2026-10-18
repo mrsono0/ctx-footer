@@ -1131,6 +1131,139 @@ check "r7(x2) p2 범위 줄 누락 기대 키 수 ctrl+g 1회·PgDn 1회·esc 1�
 check "r7(x2) p2 범위 줄 누락 esc 후 blocked 복귀" eq "$(pane_status wT:p2)" "blocked:False"
 : >"${LOG}"
 
+CASE="i8 회귀 시험 (mcp): MCP 확인창 실화면 원문(d24d7cfca3fc2ab7) 구조 판정 · 질문 문구 단독/본문 오인/안내 줄 누락 미감지 · 커서 이동"
+REAL_MCP_PROMPT_FILE="${TMP}/mcp-prompt-screen.ansi"
+MCP_B64="DQobWzBtG1szODsyOzE0NzsxNjE7MTYxbXdmMy1jb2RlLXJlc2VhcmNoX2NvbnRleHQ3L3Jlc29sdmUtbGlicmFyeS1pZBtbMG0NCg0KG1swbRtbMW1BbGxvdyBjYWxsaW5nIHRoaXMgdG9vbD8bWzBtDQobWzBtG1szODsyOzM4OzEzOTsyMTBtPiAxLiBZZXMsIGFsbG93IHRvb2wgY2FsbBtbMG0NCiAgMi4gWWVzLCBhbmQgYWx3YXlzIGFsbG93IHRvb2wgJ3dmMy1jb2RlLXJlc2VhcmNoX2NvbnRleHQ3L3Jlc29sdmUtbGlicmFyeS1pZCcgaW4gdGhpcw0KY29udmVyc2F0aW9uDQogIDMuIFllcywgYW5kIGFsd2F5cyBhbGxvdyB0b29sICd3ZjMtY29kZS1yZXNlYXJjaF9jb250ZXh0Ny9yZXNvbHZlLWxpYnJhcnktaWQnIChQZXJzaXN0DQp0byBzZXR0aW5ncy5qc29uKQ0KICA0LiBObywgZGVueSB0b29sIGNhbGwNCiAgNS4gTm8sIGFuZCBhbHdheXMgZGVueSB0b29sICd3ZjMtY29kZS1yZXNlYXJjaF9jb250ZXh0Ny9yZXNvbHZlLWxpYnJhcnktaWQnIGluIHRoaXMNCmNvbnZlcnNhdGlvbg0KICA2LiBObywgYW5kIGFsd2F5cyBkZW55IHRvb2wgJ3dmMy1jb2RlLXJlc2VhcmNoX2NvbnRleHQ3L3Jlc29sdmUtbGlicmFyeS1pZCcgKFBlcnNpc3QgdG8NCnNldHRpbmdzLmpzb24pDQoNCiAgG1swbRtbMW0bWzM4OzI7Mzg7MTM5OzIxMG3ihpEv4oaTG1swbRtbMzg7MjsxMzE7MTQ4OzE1MG0gTmF2aWdhdGUgwrcgG1swbRtbMW0bWzM4OzI7Mzg7MTM5OzIxMG10YWIbWzBtG1szODsyOzEzMTsxNDg7MTUwbSBBbWVuZBtbMG0NChtbMG0bWzM4OzI7MTMxOzE0ODsxNTBtZXNjIHRvIGNhbmNlbBtbMG0gICAgICAgIBtbMG0bWzM4OzI7MTMzOzE1MzswbWFjY2VwdC1lZGl0cxtbMG0bWzM4OzI7MTMxOzE0ODsxNTBtIMK3IEdlbWluaSA0IEFyZ29uIMK3IGhpZ2ggwrcgG1swbRtbMW0bWzM4OzI7MjAzOzc1OzIybUFJOiA5MzkgKC9jcmVkaXRzIHRvIGFkZCBtbxtbMG0="
+MCP_B64="${MCP_B64}" OUT_FILE="${REAL_MCP_PROMPT_FILE}" python3 -c '
+import base64, os
+with open(os.environ["OUT_FILE"], "wb") as f:
+    f.write(base64.b64decode(os.environ["MCP_B64"]))
+'
+check "i8 MCP 실화면 원문 sha256(d24d7cfca3fc2ab7) 일치" eq "$(shasum -a 256 "${REAL_MCP_PROMPT_FILE}" | cut -c1-16)" "d24d7cfca3fc2ab7"
+
+# (m1) 실화면 원문(ANSI 포함) + 상태 blocked → EVENT impl-blocked kind=mcp
+mkstate "${VICE_SPEC}" "${IMPL_SPEC}|blocked" "${CRITIC_SPEC}|idle"
+STATE_FILE="${STATE}" MCP_FILE="${REAL_MCP_PROMPT_FILE}" python3 -c '
+import json, os
+with open(os.environ["STATE_FILE"], "r", encoding="utf-8") as f:
+    st = json.load(f)
+raw = open(os.environ["MCP_FILE"], "rb").read().decode("utf-8")
+for p in st["panes"]:
+    if p["pane_id"] == "wT:p2":
+        p["agent_status"] = "blocked"
+        p["screen"] = raw
+with open(os.environ["STATE_FILE"], "w", encoding="utf-8") as f:
+    json.dump(st, f, ensure_ascii=False, indent=1)
+'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+	"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 3 --interval 1 2>&1)"
+RC=$?
+check "i8(m1) MCP 실화면 원문 team-watch rc 0" eq "${RC}" 0
+check "i8(m1) MCP 실화면 원문 EVENT impl-blocked kind=mcp" last_line "EVENT impl-blocked kind=mcp pane=wT:p2 status=blocked focused_pane_id=- zoomed=false active_workspace=wT"
+check "i8(m1) MCP 확인창 도구 이름 미출력" not_has "wf3-code-research_context7"
+check "i8(m1) MCP 실화면 원문 키 전송 0" eq "$(grep -cE "^pane${T}send-(keys|text)${T}" "${LOG}")" 0
+
+# (m2) ANSI 제거 평문(visible) + 커서 2번 이동 + 상태 blocked → EVENT impl-blocked kind=mcp
+STATE_FILE="${STATE}" MCP_FILE="${REAL_MCP_PROMPT_FILE}" python3 -c '
+import json, os, re
+with open(os.environ["STATE_FILE"], "r", encoding="utf-8") as f:
+    st = json.load(f)
+raw = open(os.environ["MCP_FILE"], "rb").read().decode("utf-8")
+plain = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", raw).replace("\r\n", "\n")
+cur2 = plain.replace("> 1. Yes, allow tool call\n  2. Yes,", "  1. Yes, allow tool call\n> 2. Yes,", 1)
+for p in st["panes"]:
+    if p["pane_id"] == "wT:p2":
+        p["agent_status"] = "blocked"
+        p["screen"] = cur2
+with open(os.environ["STATE_FILE"], "w", encoding="utf-8") as f:
+    json.dump(st, f, ensure_ascii=False, indent=1)
+'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+	"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 3 --interval 1 2>&1)"
+RC=$?
+check "i8(m2) MCP 평문·커서 2번 이동 rc 0" eq "${RC}" 0
+check "i8(m2) MCP 평문·커서 2번 이동 EVENT impl-blocked kind=mcp" last_line "EVENT impl-blocked kind=mcp pane=wT:p2 status=blocked focused_pane_id=- zoomed=false active_workspace=wT"
+
+# (m3) MCP 화면이나 상태가 blocked가 아님(idle) → heartbeat
+patch_pane "wT:p2" '{"agent_status": "idle"}'
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+	"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 1 --interval 1 2>&1)"
+RC=$?
+check "i8(m3) MCP 화면이나 idle이면 미감지(heartbeat)" last_line "EVENT heartbeat impl=idle critic=idle"
+
+# (m4) 질문 문구 단독 / 본문 메뉴+아래 입력란 / 안내 줄 누락(상태 blocked, 짧은 시간) → kind=mcp 미발생(heartbeat)
+for neg_kind in question_only body_with_input no_hint; do
+	STATE_FILE="${STATE}" MCP_FILE="${REAL_MCP_PROMPT_FILE}" NEG="${neg_kind}" python3 -c '
+import json, os, re
+with open(os.environ["STATE_FILE"], "r", encoding="utf-8") as f:
+    st = json.load(f)
+raw = open(os.environ["MCP_FILE"], "rb").read().decode("utf-8")
+plain = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", raw).replace("\r\n", "\n")
+neg = os.environ["NEG"]
+if neg == "question_only":
+    scr = "Allow calling this tool?\n> 1. Yes, allow tool call"
+elif neg == "body_with_input":
+    lines = plain.splitlines()
+    scr = "\n".join(lines[:-1]) + "\n\u25cf Done.\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n> \n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n" + lines[-1]
+else:
+    scr = "\n".join(l for l in plain.splitlines() if "Navigate" not in l)
+for p in st["panes"]:
+    if p["pane_id"] == "wT:p2":
+        p["agent_status"] = "blocked"
+        p["screen"] = scr
+with open(os.environ["STATE_FILE"], "w", encoding="utf-8") as f:
+    json.dump(st, f, ensure_ascii=False, indent=1)
+'
+	OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+		"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 1 --interval 1 2>&1)"
+	RC=$?
+	check "i8(m4:${neg_kind}) 구조 불일치 시 kind=mcp 미발생(heartbeat)" last_line "EVENT heartbeat impl=blocked critic=idle"
+done
+
+CASE="i8 회귀 시험 (unknown blocked): 미인식 blocked가 기준 시간을 넘지 않을 때 미발생 · 넘을 때 kind=unknown 알림"
+# (u1) 미인식 blocked가 기준(2초) 이하(약 0.5초 후 done 전환 — 펼친 확인창 닫기 뒤 지연 모사) → kind=unknown 미발생, impl-done
+mkstate "${VICE_SPEC}" "${IMPL_SPEC}|blocked" "${CRITIC_SPEC}|idle"
+patch_pane "wT:p2" '{"screen": "Expanded Tool Permission Editor\nClosing..."}'
+WATCH_OUT="${TMP}/watch-unk-short.out"
+: >"${WATCH_OUT}"
+(
+	cd "${TEST_REPO}" &&
+		TMPDIR="${SELF_TMP}" UNKNOWN_BLOCKED_SEC=2 MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+			"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 5 --interval 1 >"${WATCH_OUT}" 2>&1
+) &
+BG_PID=$!
+wait_watch_ready "${WATCH_OUT}"
+sleep 0.5
+check "i8(u1) 짧은 미인식 blocked 중 EVENT 미발생" eq "$(grep -c '^EVENT ' "${WATCH_OUT}")" 0
+patch_pane "wT:p2" '{"agent_status": "done", "screen": "작업 완료"}'
+wait "${BG_PID}"
+RC=$?
+OUT="$(cat "${WATCH_OUT}")"
+check "i8(u1) 짧은 미인식 blocked 해소 후 rc 0" eq "${RC}" 0
+check "i8(u1) 짧은 미인식 blocked 해소 시 kind=unknown 없이 impl-done" last_line "EVENT impl-done pane=wT:p2"
+
+# (u2) 미인식 blocked가 기준(2초)을 넘지 않은 채 감시 종료(--duration 2 --interval 1) → kind=unknown 미발생(heartbeat)
+mkstate "${VICE_SPEC}" "${IMPL_SPEC}|blocked" "${CRITIC_SPEC}|idle"
+patch_pane "wT:p2" '{"screen": "Unrecognized blocked screen"}'
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" UNKNOWN_BLOCKED_SEC=2 MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+	"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 2 --interval 1 2>&1)"
+RC=$?
+check "i8(u2) 기준(2초) 이하 감시 종료 rc 0" eq "${RC}" 0
+check "i8(u2) 기준(2초) 이하 감시 종료 시 heartbeat(kind=unknown 미발생)" last_line "EVENT heartbeat impl=blocked critic=idle"
+
+# (u3) 미인식 blocked가 기준(1초)을 넘어 지속(--duration 6 --interval 1) → EVENT impl-blocked kind=unknown
+mkstate "${VICE_SPEC}" "${IMPL_SPEC}|blocked" "${CRITIC_SPEC}|idle"
+patch_pane "wT:p2" '{"screen": "Unrecognized blocked screen"}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" UNKNOWN_BLOCKED_SEC=1 MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+	"${TEST_BASH}" "${WATCH_SCRIPT}" general --duration 6 --interval 1 2>&1)"
+RC=$?
+check "i8(u3) 기준 초과 미인식 blocked rc 0" eq "${RC}" 0
+check "i8(u3) 기준 초과 미인식 blocked EVENT impl-blocked kind=unknown" last_line "EVENT impl-blocked kind=unknown pane=wT:p2 status=blocked focused_pane_id=- zoomed=false active_workspace=wT"
+check "i8(u3) 기준 초과 미인식 blocked 키 전송 0" eq "$(grep -cE "^pane${T}send-(keys|text)${T}" "${LOG}")" 0
+
 CASE="team-watch: cf-impl idle/done (하단 ● [시각] ... running 표시 동안 대기 후 해제 시 EVENT)"
 mkstate "${VICE_SPEC}" "${IMPL_SPEC}|idle" "${CRITIC_SPEC}|idle"
 patch_pane "wT:p2" '{"screen": "작업 출력\n● [19:00:01] bash test ... running"}'
