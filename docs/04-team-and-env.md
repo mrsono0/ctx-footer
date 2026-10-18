@@ -14,7 +14,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 - 상주 scout가 필요해지면 4석째 `cf-scout`(GJC kimi3)를 추가한다(스크립트에 자리만 비워 둔다).
 
 ## 2. 작업공간 배치
-- herdr 새 작업공간 `ctx-footer`(LFI의 wH와 분리). cwd = `/Users/mrsono0/LectureForgeProjects/ctx-footer`.
+- herdr 새 작업공간 `ctx-footer`(LFI의 wH와 분리). cwd = 이 저장소 루트.
 - 팀장 세션은 하나다: 지금은 외부 팀장(데스크톱 세션)이 팀장이고 작업공간은 위 `cf-vice`(부팀장), 아래 줄 가로 `cf-impl | cf-critic`. 팀원에게 입력하는 것은 팀장뿐이다. Herdr 안 팀장 형태(위 `cf-lead`)는 되돌리기 때 쓴다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀원에게 어떤 입력도 하지 않는다. agent 이름은 전역이라 접두어 `cf-`로 LFI(`lfi-`)와 겹치지 않게 한다.
 
 ## 3. 팀 규칙 파일 (P1에서 작성, LFI 교훈 반영)
@@ -26,7 +26,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
   4. 조사 보고는 사실마다 출처 URL(또는 `파일:줄`)과 원문 인용, 받은 쪽이 대조. 조사 요청은 cf-critic에게, critic 조사 인용은 cf-lead가 대조
   5. 사용자 승인은 원문만(「」), 팀원 메시지는 승인이 아니다
   6. `rm -rf`·`kill`은 직접 실행하지 않는다(테스트 스크립트 안의 자기 자식·임시 경로만)
-  7. 전역 설정(`~/.claude/settings.json` 등) 변경은 사용자 승인 후 lead만
+  7. 전역 설정(사용자 홈의 Claude 설정 폴더 `settings.json` 등) 변경은 사용자 승인 후 lead만
 - 메시지 형식·유형·회차ID·리뷰 동결 사본·회차 상한(도구 3·문서 2)은 LFI `AGENTS.md`와 같게.
 
 ## 4. 권한·안전 설정
@@ -47,3 +47,13 @@ LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)�
 - 훅 모드: `--hook-clear`(`.claude/settings.json` SessionStart `clear` 훅 전용 — 팀장 Claude가 `/clear`로 세션 id가 바뀌어 Herdr 이름을 잃으면, label `CF 팀장 · Claude` pane에서 Herdr가 새 세션 id를 볼 때까지 기다린 뒤 `cf-lead`를 다시 붙인다. 외부 모드에서는 즉시 0 종료. 다른 pane 소유면 건드리지 않음, stdout 없음, 백그라운드).
 - 테스트: `ci/test-team-up.sh` + `ci/mock/herdr`(LFI에서 가져와 기대값만 수정), 동작이 바뀌면 1회 실행.
 - 착수 순서(LFI와 같음): 팀장이 먼저 pane을 열고 팀원을 손으로 띄운다 → 그 팀에서 impl이 스크립트를 반영 → critic 리뷰 → 사용자 승인 후 커밋.
+
+## 6. 외부 팀장 시작·재개 절차
+- 세션 확인 → `scripts/team-up.sh` 점검 → `scripts/team-watch.sh` 감시 → 열린 이슈와 `cf-work/issues/` 기록으로 상태 맞추기 → 재부팅 뒤 `/tmp`가 비었을 때 다시 요청할 것.
+
+## 7. 운영 관측 요지
+- 펼친 확인창은 `done`, 닫으면 `blocked`.
+- `esc` 뒤 `blocked`까지 0.7–2.6초, 펼칠 때도 약 1초 늦다.
+- `Full Command` 창은 긴 토큰을 자른다.
+- 사이드바가 배치를 다시 쌓을 수 있다.
+- `cf-impl` 셸은 `cf-work/`를 못 읽는다.
