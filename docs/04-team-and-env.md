@@ -32,6 +32,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 ## 4. 권한·안전 설정
 - `.claude/settings.json`(프로젝트): deny `rm -rf`·`kill`·`pkill`·`killall`·`git push --force`·`git push -f`·`brew install`·`launchctl`(패턴이 맞는 형태만 — `git push origin main --force`처럼 옵션이 뒤에 오면 불일치); ask `git commit`; allow `herdr *`·`git push origin main`(정확 일치). push 전체 ask는 2026-10-13 사용자가 직접 뺐다 — allow와 맞지 않는 푸시(다른 브랜치·태그 등)는 사람 확인 없이 auto 모드 분류기 판단에 맡겨질 수 있으므로, 위임 밖 푸시 금지는 AGENTS.md 「푸시 위임」 규칙으로 지킨다.
 - `.codex/rules/herdr.rules`: `herdr agent prompt`, `herdr pane send-text/send-keys`, `herdr agent list`, `herdr pane read`만 허용(LFI와 같은 4개) — critic이 --yolo로 뜰 때는 쓰이지 않는 예비 규칙.
+- `.codex/config.toml`: `project_doc_max_bytes = 65536` 하나만 둔다 — AGENTS.md가 Codex 기본 32 KiB에서 잘리지 않게(#12). 저장소가 Codex에서 신뢰된 프로젝트일 때만 적용된다.
 
 ## 5. 환경 구축 스크립트 `scripts/team-up.sh`
 LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)를 가져와 **변수만** 바꾼다.

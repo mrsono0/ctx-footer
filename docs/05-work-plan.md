@@ -53,6 +53,7 @@
 - #8(2026-10-18, 팀장 감시 도구): `scripts/team-watch.sh`가 MCP 도구 확인창을 화면 구조로 알아보고 `EVENT impl-blocked kind=mcp`를, 알아보지 못한 blocked가 20초를 넘으면 `kind=unknown`을 낸다(명령 확인창 사건 줄은 그대로). 모의 시험 224/224, 실화면 `kind=mcp` 확인. 커밋 `093cfda`.
 - #10(2026-10-18, 문서 정정): `AGENTS.md` §7 D5의 「`team-watch.sh`가 보지 않는 것」을 코드에 맞춤(외부 팀장 기록·로컬 `origin/main`은 이미 봄), `docs/04` §1 팀장 권한 칸의 옛 보관 경로를 `cf-work/`로. 이 줄과 같은 커밋.
 - #9(2026-10-18, 팀 환경, D4=b): 외부 팀장 기록에 세션 Claude 프로세스의 pid·시작 시각을 더하고, 옛 주인이 끝났음이 확인되면 바꾸는 명령(`--up`·`--resume-impl`·`--layout`)이 기록을 스스로 넘긴다(살아 있음·판정 불가는 거부, 점검은 표시만). 기록 쓰기는 잠금으로 묶음. 모의 시험 402/402, 실화면: 살아 있음 거부·끝난 주인 자동 회수·옛 형식 거부 확인. 이 줄과 같은 커밋.
+- #12(2026-10-18, 팀 환경): `.codex/config.toml`에 `project_doc_max_bytes = 65536`을 두어 Codex가 AGENTS.md(40 KiB)를 기본 32 KiB에서 자르지 않게 함(잘리면 「안전」·「사용자 승인」·「보고 형식」 절이 cf-critic에 실리지 않았다). `AGENTS.md` §1 규칙·권한 파일 목록에 `.codex/config.toml` 추가. 이 줄과 같은 커밋.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.

@@ -1,0 +1,2 @@
+# Codex 프로젝트 설정. AGENTS.md가 기본 32 KiB를 넘어 뒤가 잘리지 않게 한다(#12).
+project_doc_max_bytes = 65536
