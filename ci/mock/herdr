@@ -406,5 +406,95 @@ if cmd == ["pane", "run"]:
     save()
     ok("pane_run", "pane", public(p))
 
+
+def apply_key_hook(p):
+    hooks = p.get("on_key")
+    if isinstance(hooks, list) and hooks:
+        patch = hooks.pop(0)
+        if isinstance(patch, dict):
+            p.update(patch)
+
+
+if cmd == ["pane", "read"]:
+    if should_fail("read"):
+        err("read_failed", "mock read failure")
+    pid = opt("--pane")
+    if not pid:
+        i = 2
+        while i < len(args):
+            if args[i] in ("--source", "--format", "--pane", "--lines"):
+                i += 2
+                continue
+            if args[i].startswith("--"):
+                i += 1
+                continue
+            pid = args[i]
+            break
+    p = by_id(pid) if pid else None
+    if not p:
+        err("pane_not_found", "pane not found")
+    src = opt("--source") or "visible"
+    fmt = opt("--format") or ""
+    if p.get("expanded") and isinstance(p.get("expanded_pages"), list) and p["expanded_pages"]:
+        idx = min(max(int(p.get("page_idx", 0)), 0), len(p["expanded_pages"]) - 1)
+        text = p["expanded_pages"][idx]
+    elif src == "recent-unwrapped" and "recent_screen" in p:
+        text = p["recent_screen"]
+    elif fmt == "ansi" and "ansi_screen" in p:
+        text = p["ansi_screen"]
+    else:
+        text = p.get("screen", state.get("screens", {}).get(pid, ""))
+    sys.stdout.write(text)
+    if text and not text.endswith("\n"):
+        sys.stdout.write("\n")
+    sys.exit(0)
+if cmd == ["pane", "send-keys"]:
+    if should_fail("send-keys"):
+        err("send_keys_failed", "mock send-keys failure")
+    pid = args[2] if len(args) > 2 else ""
+    key = args[3] if len(args) > 3 else ""
+    p = by_id(pid)
+    if not p:
+        err("pane_not_found", "pane not found")
+    if key.lower() in ("pagedown", "page_down", "pgdn", "pgdown"):
+        err("invalid_key", "invalid key: %s" % key)
+    if key == "ctrl+g":
+        if isinstance(p.get("expanded_pages"), list) and p["expanded_pages"]:
+            p["expanded"] = True
+            p["page_idx"] = 0
+            if p.get("agent") == "agy" and p.get("agent_status") == "blocked":
+                p["agent_status"] = "done"
+    elif key == "esc":
+        if p.get("expanded"):
+            p["expanded"] = False
+            if p.get("agent") == "agy":
+                p["agent_status"] = "blocked"
+            if "screen_after_esc" in p:
+                p["screen"] = p["screen_after_esc"]
+    apply_key_hook(p)
+    save()
+    sys.exit(0)
+if cmd == ["pane", "send-text"]:
+    if should_fail("send-text"):
+        err("send_text_failed", "mock send-text failure")
+    pid = args[2] if len(args) > 2 else ""
+    text = args[3] if len(args) > 3 else ""
+    p = by_id(pid)
+    if not p:
+        err("pane_not_found", "pane not found")
+    if text == "\x1b[6~" and p.get("expanded") and isinstance(p.get("expanded_pages"), list) and p["expanded_pages"]:
+        p["page_idx"] = min(len(p["expanded_pages"]) - 1, int(p.get("page_idx", 0)) + 1)
+    apply_key_hook(p)
+    save()
+    sys.exit(0)
+if cmd == ["workspace", "list"]:
+    if should_fail("workspace_list"):
+        err("workspace_list_failed", "mock workspace list failure")
+    wss = state.get("workspaces")
+    if wss is None:
+        ws_ids = sorted({p.get("workspace_id") for p in panes if p.get("workspace_id")})
+        wss = [{"workspace_id": w, "focused": (i == 0)} for i, w in enumerate(ws_ids)]
+    ok("workspace_list", "workspaces", wss)
+
 sys.stderr.write("mock herdr: 지원하지 않는 명령: %s\n" % " ".join(args))
 sys.exit(2)

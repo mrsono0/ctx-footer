@@ -16,7 +16,9 @@
     ],
     "allow": [
       "Bash(herdr *)",
-      "Bash(git push origin main)"
+      "Bash(git push origin main)",
+      "Bash(scripts/team-watch.sh *)",
+      "Bash(scripts/prompt-read.sh *)"
     ]
   },
   "hooks": {
