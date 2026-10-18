@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""ci/test-team-up.sh 전용 모의 ps.
+
+상태: $MOCK_HERDR_STATE (JSON, 선택). 읽는 키:
+  ps_fail         참이면 모든 호출에서 stderr 오류 후 종료 코드 2 반환.
+  ps_no_ancestor  참이면 조상 사슬에서 소문자 claude(42500)를 빼고
+                  bash -> zsh(42501) -> disclaimer(42499) -> Claude(42498) -> 1 사슬만 둔다.
+  ps_procs        추가·덮어쓸 pid 문자열 -> {"ppid": int, "comm": str, "lstart": str} 사슬.
+  ps_fail_pids    조회를 실패(stderr 오류 + 종료 코드 2)시킬 pid 문자열 목록.
+MOCK_HERDR_LOG에는 기록하지 않는다(herdr 호출 로그 전용).
+"""
+import json
+import os
+import sys
+
+BASE_PROCS = {
+    "1": {
+        "ppid": 0,
+        "comm": "/sbin/launchd",
+        "lstart": "Sun Oct 18 00:00:00 2026",
+    },
+    "42501": {
+        "ppid": 42500,
+        "comm": "/bin/zsh",
+        "lstart": "Sun Oct 18 15:36:36 2026",
+    },
+    "42500": {
+        "ppid": 42499,
+        "comm": "/Users/mock/.local/bin/claude",
+        "lstart": "Sun Oct 18 15:36:35 2026",
+    },
+    "42499": {
+        "ppid": 42498,
+        "comm": "disclaimer",
+        "lstart": "Sun Oct 18 15:36:34 2026",
+    },
+    "42498": {
+        "ppid": 1,
+        "comm": "/Applications/Claude.app/Contents/MacOS/Claude",
+        "lstart": "Sun Oct 18 15:36:30 2026",
+    },
+}
+
+state = {}
+state_path = os.environ.get("MOCK_HERDR_STATE")
+if state_path and os.path.isfile(state_path):
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+
+if state.get("ps_fail"):
+    sys.stderr.write("ps: mock failure\n")
+    sys.exit(2)
+
+procs = {k: dict(v) for k, v in BASE_PROCS.items()}
+if state.get("ps_no_ancestor"):
+    del procs["42500"]
+    procs["42501"]["ppid"] = 42499
+
+extra = state.get("ps_procs")
+if isinstance(extra, dict):
+    for k, v in extra.items():
+        if v is None:
+            procs.pop(str(k), None)
+        elif isinstance(v, dict):
+            procs[str(k)] = dict(v)
+
+fail_pids = {str(x) for x in (state.get("ps_fail_pids") or [])}
+
+args = sys.argv[1:]
+fmt = None
+pid = None
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "-o" and i + 1 < len(args):
+        fmt = args[i + 1]
+        i += 2
+    elif a.startswith("-o") and len(a) > 2:
+        fmt = a[2:]
+        i += 1
+    elif a == "-p" and i + 1 < len(args):
+        pid = args[i + 1]
+        i += 2
+    elif a.startswith("-p") and len(a) > 2:
+        pid = a[2:]
+        i += 1
+    else:
+        i += 1
+
+if pid is None or fmt is None:
+    sys.stderr.write("ps: unsupported mock args\n")
+    sys.exit(2)
+
+if pid in fail_pids:
+    sys.stderr.write("ps: mock pid failure\n")
+    sys.exit(2)
+
+if fmt == "ppid=,comm=":
+    if pid in procs:
+        p = procs[pid]
+        print(f"  {p['ppid']} {p['comm']}")
+        sys.exit(0)
+    self_ppid = os.environ.get("MOCK_PS_SELF_PPID", "42501")
+    print(f"  {self_ppid} /bin/bash")
+    sys.exit(0)
+
+if fmt == "lstart=":
+    if pid in procs and "lstart" in procs[pid]:
+        print(f"{procs[pid]['lstart']}")
+        sys.exit(0)
+    sys.exit(1)
+
+sys.stderr.write(f"ps: unsupported format: {fmt}\n")
+sys.exit(2)

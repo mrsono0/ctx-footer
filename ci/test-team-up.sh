@@ -16,9 +16,16 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/cf-team-up-test.XXXXXX")" || exit 1
 cleanup() { [ -n "$TMP" ] && [ -d "$TMP" ] && rm -rf -- "$TMP"; }
 trap cleanup EXIT
 
-export PATH="$MOCK_DIR:$PATH"
+mkdir -p "$TMP/bin"
+cp "$MOCK_DIR/ps" "$TMP/bin/ps"
+chmod +x "$TMP/bin/ps"
+export PATH="$TMP/bin:$MOCK_DIR:$PATH"
 if [ "$(command -v herdr)" != "$MOCK_DIR/herdr" ]; then
 	echo "FATAL: herdr가 모의($MOCK_DIR/herdr)가 아니다: $(command -v herdr)" >&2
+	exit 1
+fi
+if [ "$(command -v ps)" != "$TMP/bin/ps" ]; then
+	echo "FATAL: ps가 모의($TMP/bin/ps)가 아니다: $(command -v ps)" >&2
 	exit 1
 fi
 
@@ -828,6 +835,8 @@ check "변경 명령 없음" no_mutations
 check "Herdr 안 cf-lead 경고 줄" has "↳ Herdr 안 cf-lead(wN:p1)가 살아 있음 — 이관 중이면 한쪽만 팀원에게 입력한다"
 check "cf-lead 이름 그대로" eq "$(pane_named cf-lead)" wN:p1
 
+SELF_LOCK_EXPECTED="$(printf '%s\n42500\tSun Oct 18 15:36:35 2026' "$EXT_SID")"
+
 CASE="외부 모드 ⑦ + §8.1: --up critic 없음 + 첫 기록 생성 → impl 옆 새 pane·이름 확보"
 rm -f "$EXT_LOCK"
 mkstate "$EXT_IMPL"
@@ -835,7 +844,7 @@ run_ext --up
 c="$(pane_named cf-critic)"
 check "종료 코드 0" eq "$RC" 0
 check "기록 파일 생성" test -f "$EXT_LOCK"
-check "기록된 세션 id 일치" eq "$(cat "$EXT_LOCK")" "$EXT_SID"
+check "기록된 2줄 형식(세션 id + claude pid·lstart) 일치" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
 check "cf-lead rename 없음" eq "$(grep -cE "^agent${T}rename${T}.*${T}cf-lead\$" "$LOG")" 0
 check "critic 새 pane을 impl 오른쪽에 분할" eq "$(field "$c" split_from)|$(field "$c" split_direction)" "wN:p3|right"
 check "critic 기동·이름 확보" eq "$(field "$c" agent)|$(field "$c" label)" "codex|CF 검토 · Codex"
@@ -850,12 +859,13 @@ run_ext --up
 check "--up 종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
 
-CASE="외부 모드 (§8.3, §9.2): 다른 세션 id 기록됨 → 점검 경고 줄(파일 무변경) · 바꾸는 모드 die"
+CASE="외부 모드 (#9 ④ 옛 형식 / 판정 불가): 둘째 줄 없는 옛 1줄 기록 및 꼴 틀린 2줄 기록 → 점검 판정 불가(파일 무변경) · 바꾸는 모드 거부"
 printf '%s\n' "$OTHER_EXT_SID" >|"$EXT_LOCK"
 mkstate "$EXT_IMPL" "$EXT_CRITIC"
 run_ext
 check "점검 종료 코드 0" eq "$RC" 0
-check "다른 세션 경고 줄" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…)"
+check "점검 변경 명령 없음" no_mutations
+check "다른 세션 경고 줄 + 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
 check "기록 파일 내용 유지" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
 run_ext --up
 check "--up 종료 코드 1" eq "$RC" 1
@@ -864,7 +874,175 @@ check "기록 불일치 die 문구(§8.1+§9.2)" has \
 	"다른 세션(deadbeef…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 이 세션에서 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --claim-external (같은 외부 팀장이 /clear·새 대화 뒤라 세션 id가 바뀐 경우도 사용자 확인 후 --claim-external)"
 check "기록 파일 내용 여전히 유지" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
 
+BAD_LOCK="$(printf '%s\nnotapid\tSun Oct 18 12:00:00 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$BAD_LOCK" >|"$EXT_LOCK"
+run_ext
+check "꼴 틀린 2줄 점검 종료 코드 0" eq "$RC" 0
+check "꼴 틀린 2줄 점검 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+check "꼴 틀린 2줄 점검 기록 무변경" eq "$(cat "$EXT_LOCK")" "$BAD_LOCK"
+run_ext --layout
+check "꼴 틀린 2줄 --layout 거부" eq "$RC" 1
+check "꼴 틀린 2줄 herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "꼴 틀린 2줄 기록 무변경" eq "$(cat "$EXT_LOCK")" "$BAD_LOCK"
+
+for bad_ts in "not-a-start-time" "Sun Oct 18 14:00:69 2026" "Sun Oct 18 14:00:60 2026" "Sun Feb 30 14:00:00 2026"; do
+	BAD_LSTART_LOCK="$(printf '%s\n6000\t%s' "$OTHER_EXT_SID" "$bad_ts")"
+	printf '%s\n' "$BAD_LSTART_LOCK" >|"$EXT_LOCK"
+	mkstate "$EXT_IMPL" "$EXT_CRITIC"
+	setstate "ps_procs" '{"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 14:00:00 2026"}}'
+	run_ext
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) 점검 종료 코드 0" eq "$RC" 0
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) 점검 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) 점검 기록 무변경" eq "$(cat "$EXT_LOCK")" "$BAD_LSTART_LOCK"
+	run_ext --up
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) --up 거부(rc 1)" eq "$RC" 1
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) --up herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) --up 기록 무변경" eq "$(cat "$EXT_LOCK")" "$BAD_LSTART_LOCK"
+	run_ext --layout
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) --layout 거부(rc 1)" eq "$RC" 1
+	check "살아 있는 pid + 꼴 틀린 lstart($bad_ts) --layout 기록 무변경" eq "$(cat "$EXT_LOCK")" "$BAD_LSTART_LOCK"
+done
+
+CASE="외부 모드 (#9 ① 살아 있음 → 거부): 다른 세션 pid·시작 시각 모두 일치 → 점검 살아 있음(파일 무변경) · 바꾸는 모드 거부"
+ALIVE_LOCK="$(printf '%s\n6000\tSun Oct 18 14:00:00 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$ALIVE_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_procs" '{"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 14:00:00 2026"}}'
+run_ext
+check "살아 있음 점검 종료 코드 0" eq "$RC" 0
+check "살아 있음 점검 변경 명령 없음" no_mutations
+check "살아 있음 점검 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 옛 주인 살아 있음"
+check "살아 있음 점검 기록 무변경" eq "$(cat "$EXT_LOCK")" "$ALIVE_LOCK"
+for m_arg in "--up" "--layout" "--resume-impl $RESUME_SID"; do
+	# shellcheck disable=SC2086
+	run_ext $m_arg
+	check "살아 있음 $m_arg 거부(rc 1)" eq "$RC" 1
+	check "살아 있음 $m_arg herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+	check "살아 있음 $m_arg die 문구" has "다른 세션(deadbeef…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 이 세션에서 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --claim-external"
+	check "살아 있음 $m_arg 기록 무변경" eq "$(cat "$EXT_LOCK")" "$ALIVE_LOCK"
+done
+
+CASE="외부 모드 (#9 ② pid 없음 → 회수): 기록 pid가 사라짐 → 점검은 무변경 표시 · 바꾸는 명령에서 자동 회수"
+GONE_PID_LOCK="$(printf '%s\n7777\tSun Oct 18 12:00:00 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$GONE_PID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext
+check "pid 없음 점검 종료 코드 0" eq "$RC" 0
+check "pid 없음 점검 변경 명령 없음" no_mutations
+check "pid 없음 점검 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 옛 주인 종료됨 — 바꾸는 명령 때 자동 회수"
+check "pid 없음 점검은 기록을 쓰지 않음" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+run_ext --layout
+check "pid 없음 --layout 종료 코드 0" eq "$RC" 0
+check "pid 없음 자동 회수 안내 문구" has "외부 팀장 기록 자동 회수: 옛 세션(deadbeef…) 종료 확인"
+check "pid 없음 새 세션 2줄 기록으로 갱신" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+
+CASE="외부 모드 (#9 ②-경합 및 중간 종료 정리: 동시 회수 시 한쪽만 성공·중간 종료 시 잠금 자동 정리)"
+EXT_SID_B="b2c3d4e5-1111-4000-8000-000000000003"
+printf '%s\n' "$GONE_PID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_procs" '{"43500": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 15:36:36 2026"}}'
+mkdir "$EXT_LOCK.lock"
+(
+	cd "$EXT_ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_WORKSPACE_ID -u HERDR_TAB_ID \
+		CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID" \
+		MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$TMP/race-a.log" \
+		CF_RETRIES=3 CF_RETRY_SLEEP=0 "$TEAM_UP_BASH" "$EXT_SCRIPT" --layout >"$TMP/race-a.out" 2>&1
+	echo "$?" >"$TMP/race-a.rc"
+) &
+pid_a=$!
+(
+	cd "$EXT_ROOT" && env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_WORKSPACE_ID -u HERDR_TAB_ID \
+		CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="$EXT_SID_B" MOCK_PS_SELF_PPID=43500 \
+		MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$TMP/race-b.log" \
+		CF_RETRIES=3 CF_RETRY_SLEEP=0 "$TEAM_UP_BASH" "$EXT_SCRIPT" --layout >"$TMP/race-b.out" 2>&1
+	echo "$?" >"$TMP/race-b.rc"
+) &
+pid_b=$!
+sleep 0.2
+rmdir "$EXT_LOCK.lock"
+wait "$pid_a" "$pid_b"
+rc_a="$(cat "$TMP/race-a.rc")"
+rc_b="$(cat "$TMP/race-b.rc")"
+check "동시 회수 중 정확히 한 세션만 성공(rc 합 = 1)" eq "$((rc_a + rc_b))" 1
+if [ "$rc_a" = 0 ]; then
+	check "A 성공 시 기록은 A" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+	check "B 거부 문구" grep -q "다른 세션(a1b2c3d4…)이 외부 팀장으로 기록돼 있다" "$TMP/race-b.out"
+else
+	check "B 성공 시 기록은 B" eq "$(cat "$EXT_LOCK")" "$(printf '%s\n43500\tSun Oct 18 15:36:36 2026' "$EXT_SID_B")"
+	check "A 거부 문구" grep -q "다른 세션(b2c3d4e5…)이 외부 팀장으로 기록돼 있다" "$TMP/race-a.out"
+fi
+
+"$TEAM_UP_BASH" -c '
+	ROOT="$1"
+	EXT_LEAD_FILE="$ROOT/.local/team/external-lead"
+	EXT_LEAD_LOCK_DIR="$ROOT/.local/team/external-lead.lock"
+	EXT_LEAD_LOCK_HELD=0
+	warn() { echo "team-up: $*" >&2; }
+	die() { warn "$*"; exit 1; }
+	eval "$(sed -n "/^acquire_ext_lead_lock()/,/^}/p; /^release_ext_lead_lock()/,/^}/p" "$2")"
+	acquire_ext_lead_lock
+	exit 42
+' _ "$EXT_ROOT" "$EXT_SCRIPT"
+holder_rc=$?
+check "잠금 보유 중 조기 종료(exit 42) 시 종료 코드 보존" eq "$holder_rc" 42
+check "잠금 보유 중 조기 종료 뒤 잠금 디렉터리 자동 정리됨" test ! -e "$EXT_LOCK.lock"
+printf '%s\n' "$GONE_PID_LOCK" >|"$EXT_LOCK"
+run_ext --layout
+check "조기 종료 정리 뒤 다음 실행(--layout) 정상 회수 성공" eq "$RC" 0
+
+CASE="외부 모드 (#9 ③ 시작 시각 다름 → 회수): 기록 pid는 존재하나 lstart가 다름 → 점검은 무변경 표시 · 바꾸는 명령에서 자동 회수"
+DIFF_LSTART_LOCK="$(printf '%s\n6000\tSun Oct 18 12:00:00 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$DIFF_LSTART_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_procs" '{"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 14:00:00 2026"}}'
+run_ext
+check "시작 시각 다름 점검 종료 코드 0" eq "$RC" 0
+check "시작 시각 다름 점검 변경 명령 없음" no_mutations
+check "시작 시각 다름 점검 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 옛 주인 종료됨 — 바꾸는 명령 때 자동 회수"
+check "시작 시각 다름 점검은 기록을 쓰지 않음" eq "$(cat "$EXT_LOCK")" "$DIFF_LSTART_LOCK"
+run_ext --up
+check "시작 시각 다름 --up 종료 코드 0" eq "$RC" 0
+check "시작 시각 다름 자동 회수 안내 문구" has "외부 팀장 기록 자동 회수: 옛 세션(deadbeef…) 종료 확인"
+check "시작 시각 다름 새 세션 2줄 기록으로 갱신" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+
+CASE="외부 모드 (#9 ⑤ ps 실패·조상 없음 → 거부): ps 오류 또는 소문자 claude 조상 없음 → 점검 판정 불가 · 바꾸는 모드 거부"
+printf '%s\n' "$GONE_PID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_fail" "true"
+run_ext
+check "ps 실패 점검 종료 코드 0" eq "$RC" 0
+check "ps 실패 점검 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+check "ps 실패 점검 기록 무변경" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+run_ext --up
+check "ps 실패 --up 거부(rc 1)" eq "$RC" 1
+check "ps 실패 herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "ps 실패 --claim-external 안내" has "--claim-external"
+check "ps 실패 기록 무변경" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_fail_pids" '["7777"]'
+run_ext
+check "기록 pid ps 실패 점검 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+run_ext --up
+check "기록 pid ps 실패 --up 거부(rc 1)" eq "$RC" 1
+check "기록 pid ps 실패 herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "기록 pid ps 실패 기록 무변경" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_no_ancestor" "true"
+run_ext
+check "조상 없음 점검 종료 코드 0" eq "$RC" 0
+check "조상 없음 점검 판정 불가" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+check "조상 없음 점검 기록 무변경" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+run_ext --layout
+check "조상 없음 --layout 거부(rc 1)" eq "$RC" 1
+check "조상 없음 herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "조상 없음 --claim-external 안내" has "--claim-external"
+check "조상 없음 기록 무변경" eq "$(cat "$EXT_LOCK")" "$GONE_PID_LOCK"
+
 CASE="외부 모드 (§8.1, §8.3): --claim-external 덮어쓰기 및 비외부 모드 거부"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+printf '%s\n' "$OTHER_EXT_SID" >|"$EXT_LOCK"
 : >"$LOG"
 OUT="$(cd "$EXT_ROOT" && env HERDR_ENV=1 HERDR_PANE_ID=wN:p1 MOCK_HERDR_STATE="$STATE" MOCK_HERDR_LOG="$LOG" \
 	"$TEAM_UP_BASH" "$EXT_SCRIPT" --claim-external 2>&1)"
@@ -874,7 +1052,7 @@ check "기록 파일 덮어쓰지 않음" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SI
 run_ext --claim-external
 check "--claim-external 종료 코드 0" eq "$RC" 0
 check "herdr 호출 없음" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
-check "새 세션 id로 덮어써짐" eq "$(cat "$EXT_LOCK")" "$EXT_SID"
+check "새 세션 2줄 기록으로 덮어써짐" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
 run_ext --up
 check "덮어쓴 뒤 --up 통과" eq "$RC" 0
 
