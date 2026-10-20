@@ -15,6 +15,8 @@ usage() {
 
 MODE="general"
 ROUND_ID=""
+ISSUE_NUM=""
+ROUND_SUB=""
 ALLOW_REGEX=""
 DURATION=3600
 INTERVAL=5
@@ -36,7 +38,16 @@ if [ "$#" -gt 0 ]; then
 		ALLOW_REGEX="$3"
 		shift 3
 		case "${ROUND_ID}" in
-		"" | -* | *[!A-Za-z0-9._-]*) usage ;;
+		i[0-9]*-?*)
+			ISSUE_NUM="${ROUND_ID#i}"
+			ISSUE_NUM="${ISSUE_NUM%%-*}"
+			ROUND_SUB="${ROUND_ID#*-}"
+			case "${ISSUE_NUM}" in '' | *[!0-9]*) usage ;; esac
+			case "${ROUND_SUB}" in '' | -* | .* | *..* | *[!A-Za-z0-9._-]*) usage ;; esac
+			;;
+		*)
+			usage
+			;;
 		esac
 		[ -n "${ALLOW_REGEX}" ] || usage
 		;;
@@ -140,6 +151,11 @@ trap 'exit 0' INT TERM HUP
 
 ROOT="${PRESET_ROOT}"
 TOOL_HASH="${PRESET_HASH}"
+WORK_ROOT="${CF_WORK_ROOT:-}"
+if [ -z "${WORK_ROOT}" ]; then
+	WORK_ROOT="$(cd "${ROOT}/.." && pwd -P)/cf-work"
+fi
+WORK_ROOT="${WORK_ROOT%/}"
 
 git_ro() {
 	HOME=/dev/null XDG_CONFIG_HOME=/dev/null GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
@@ -413,7 +429,7 @@ print(f"{prompt_kind}\t{has_running}\t{has_new}")
 }
 
 list_to_lead() {
-	local d="/tmp/cf-${ROUND_ID}/to-lead"
+	local d="${WORK_ROOT}/issues/${ISSUE_NUM}/${ROUND_SUB}/to-lead"
 	if [ -d "${d}" ]; then
 		D_PATH="${d}" python3 -c '
 import os

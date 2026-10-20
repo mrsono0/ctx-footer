@@ -3,7 +3,7 @@
 # ci/mock/herdr(모의)와 가짜 pane ID(wT:*), 임시 메인 git 저장소만 쓰며 실제 팀에 닿지 않는다.
 set -u
 
-unset CF_EXTERNAL_LEAD CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID
+unset CF_EXTERNAL_LEAD CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ORIG_WATCH="${ROOT}/scripts/team-watch.sh"
@@ -18,7 +18,9 @@ if [ -f "${REAL_LOCK}" ]; then
 fi
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/cf-team-watch-test.XXXXXX")" || exit 1
-TEST_ROUND_ID="twtest-$$"
+TEST_ISSUE_NUM="999999"
+TEST_ROUND_SUB="r$$"
+TEST_ROUND_ID="i${TEST_ISSUE_NUM}-${TEST_ROUND_SUB}"
 
 cleanup() {
 	TMP_TARGET="${TMP}" ROUND_PREFIX="/tmp/cf-${TEST_ROUND_ID}" python3 -c '
@@ -27,7 +29,7 @@ t = os.environ.get("TMP_TARGET", "")
 if t and os.path.isdir(t) and ("cf-team-watch-test." in t):
     shutil.rmtree(t, ignore_errors=True)
 rp = os.environ.get("ROUND_PREFIX", "")
-if rp and rp.startswith("/tmp/cf-twtest-"):
+if rp and rp.startswith("/tmp/cf-i999999-r"):
     for p in glob.glob(rp + "*"):
         if os.path.isdir(p):
             shutil.rmtree(p, ignore_errors=True)
@@ -1462,10 +1464,16 @@ printf '%s\n' "${EXT_SID}" >"${EXT_LOCK}"
 check "external-lead-changed rc 0" eq "${RC}" 0
 check "EVENT external-lead-changed" has "EVENT external-lead-changed "
 
-CASE="team-watch: round 모드(허용 파일 밖 변경 · to-lead 새 파일 · VERDICT 후 정체)"
-ROUND_DIR="/tmp/cf-${TEST_ROUND_ID}"
-mkdir -p "${ROUND_DIR}/to-lead"
-printf 'ack\n' >"${ROUND_DIR}/to-lead/01-ACK.md"
+CASE="team-watch: round 모드(허용 파일 밖 변경 · to-lead 새 파일 · CF_WORK_ROOT · VERDICT 후 정체)"
+ROUND_TO_LEAD="${TMP}/cf-work/issues/${TEST_ISSUE_NUM}/${TEST_ROUND_SUB}/to-lead"
+mkdir -p "${ROUND_TO_LEAD}"
+printf 'ack\n' >"${ROUND_TO_LEAD}/01-ACK.md"
+
+# 0) 잘못된 회차ID(i<번호>-<회차> 형식이 아님)는 종료 2로 거부
+OUT="$(cd "${TEST_REPO}" && TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" "${TEST_BASH}" "${WATCH_SCRIPT}" round "badround-1" '^allowed\.txt$' --duration 1 --interval 1 2>&1)"
+RC=$?
+check "잘못된 회차ID 거부 rc 2" eq "${RC}" 2
+check "잘못된 회차ID 안내" has "사용법: scripts/team-watch.sh"
 
 # 1) 허용된 파일 변경은 통과하고, 허용 밖 미추적 파일 생성 시 EVENT out-of-scope
 printf 'allowed-change\n' >"${TEST_REPO}/allowed.txt"
@@ -1487,7 +1495,7 @@ git_test checkout -- allowed.txt
 check "out-of-scope rc 0" eq "${RC}" 0
 check "EVENT out-of-scope" last_line "EVENT out-of-scope file=unallowed.txt"
 
-# 2) to-lead에 감시 시작 때 없던 새 파일 등장 시 EVENT to-lead
+# 2) 기본 작업 뿌리(<저장소 상위 폴더>/cf-work/issues/<번호>/<회차>/to-lead)에 감시 시작 때 없던 새 파일 등장 시 EVENT to-lead
 WATCH_OUT="${TMP}/watch-tolead.out"
 : >"${WATCH_OUT}"
 (
@@ -1497,12 +1505,32 @@ WATCH_OUT="${TMP}/watch-tolead.out"
 ) &
 BG_PID=$!
 wait_watch_ready "${WATCH_OUT}"
-printf 'report\n' >"${ROUND_DIR}/to-lead/02-REPORT.md"
+printf 'report\n' >"${ROUND_TO_LEAD}/02-REPORT.md"
 wait "${BG_PID}"
 RC=$?
 OUT="$(cat "${WATCH_OUT}")"
 check "to-lead 새 파일 rc 0" eq "${RC}" 0
 check "EVENT to-lead" last_line "EVENT to-lead file=02-REPORT.md"
+
+# 2b) CF_WORK_ROOT로 지정한 작업 뿌리(<CF_WORK_ROOT>/issues/<번호>/<회차>/to-lead)에서도 새 파일 감지
+CUSTOM_WORK_ROOT="${TMP}/custom-work"
+CUSTOM_TO_LEAD="${CUSTOM_WORK_ROOT}/issues/17/d2-sub/to-lead"
+mkdir -p "${CUSTOM_TO_LEAD}"
+WATCH_OUT="${TMP}/watch-tolead-custom.out"
+: >"${WATCH_OUT}"
+(
+	cd "${TEST_REPO}" &&
+		CF_WORK_ROOT="${CUSTOM_WORK_ROOT}" TMPDIR="${SELF_TMP}" MOCK_HERDR_STATE="${STATE}" MOCK_HERDR_LOG="${LOG}" \
+			"${TEST_BASH}" "${WATCH_SCRIPT}" round "i17-d2-sub" '^allowed\.txt$' --duration 5 --interval 1 >"${WATCH_OUT}" 2>&1
+) &
+BG_PID=$!
+wait_watch_ready "${WATCH_OUT}"
+printf 'report\n' >"${CUSTOM_TO_LEAD}/01-REPORT.md"
+wait "${BG_PID}"
+RC=$?
+OUT="$(cat "${WATCH_OUT}")"
+check "CF_WORK_ROOT to-lead 새 파일 rc 0" eq "${RC}" 0
+check "CF_WORK_ROOT EVENT to-lead" last_line "EVENT to-lead file=01-REPORT.md"
 
 # 3) 동결 사본 VERDICT.md 생성 후 cf-impl이 정체되면 EVENT verdict-stalled
 REVIEW_DIR="/tmp/cf-${TEST_ROUND_ID}-review.1"

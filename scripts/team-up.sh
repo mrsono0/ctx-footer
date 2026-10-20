@@ -22,7 +22,7 @@ SEAT_LABEL=("CF 팀장 · Claude" "CF 구현 · agy" "CF 검토 · Codex")
 SEAT_CMD=(
 	"" # 팀장은 사람이 이 pane에서 띄운다. 스크립트는 팀장을 실행하지 않는다.
 	"agy --model $IMPL_MODEL --mode accept-edits --sandbox"
-	'codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort="high"'
+	'codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort="high"'
 )
 LEAD_RATIO=0.6                       # 배치 기준: 팀장(위) pane이 차지하는 세로 비율
 ROW_RATIO=0.5                        # 배치 기준: 아래 줄 impl(왼쪽) 몫. 비율 허용 오차는 ±0.01
@@ -635,6 +635,7 @@ for w in argv[1:]:
     if w.startswith("--") and "=" in w: act.extend(w.split("=",1))
     else: act.append(w)
 missing=[]; diff_val=[]; act_parts=[]
+exp_pairs={u for u in units if len(u)==2}
 for u in units:
     if len(u)==1:
         if u[0] in act: act_parts.append(u[0])
@@ -644,7 +645,7 @@ for u in units:
         if any(act[j]==flag and act[j+1]==val for j in range(len(act)-1)):
             act_parts.append("%s %s"%(flag,val))
             continue
-        if any(act[j]==flag and not act[j+1].startswith("-") for j in range(len(act)-1)):
+        if any(act[j]==flag and not act[j+1].startswith("-") and (act[j],act[j+1]) not in exp_pairs for j in range(len(act)-1)):
             diff_val.append("%s(기대 %s)"%(flag,val))
             act_parts.append("%s=<다름>"%flag)
         else:

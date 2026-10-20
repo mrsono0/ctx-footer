@@ -18,10 +18,15 @@ trap cleanup EXIT
 
 mkdir -p "$TMP/bin"
 cp "$MOCK_DIR/ps" "$TMP/bin/ps"
-chmod +x "$TMP/bin/ps"
+python3 -c 'import sys
+s=open(sys.argv[1],encoding="utf-8").read()
+s=s.replace("\"codex\", \"--search\", \"--yolo\", \"--disable\", \"worktrees\",",
+            "\"codex\", \"--search\", \"--yolo\", \"--disable\", \"worktrees\", \"--disable\", \"memories\",",1)
+open(sys.argv[2],"w",encoding="utf-8").write(s)' "$MOCK_DIR/herdr" "$TMP/bin/herdr"
+chmod +x "$TMP/bin/ps" "$TMP/bin/herdr"
 export PATH="$TMP/bin:$MOCK_DIR:$PATH"
-if [ "$(command -v herdr)" != "$MOCK_DIR/herdr" ]; then
-	echo "FATAL: herdr가 모의($MOCK_DIR/herdr)가 아니다: $(command -v herdr)" >&2
+if [ "$(command -v herdr)" != "$TMP/bin/herdr" ]; then
+	echo "FATAL: herdr가 모의($TMP/bin/herdr)가 아니다: $(command -v herdr)" >&2
 	exit 1
 fi
 if [ "$(command -v ps)" != "$TMP/bin/ps" ]; then
@@ -231,9 +236,9 @@ run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
 check "cf-impl 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --model gemini-4-argon-high, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
-check "cf-critic 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+check "cf-critic 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, --disable memories, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
 check "공통 한 줄 cf-impl mismatch" has "cf-impl wN:p3 mismatch 실제=없음 기대=--model gemini-4-argon-high --mode accept-edits --sandbox 대화=$IMPL_SID"
-check "공통 한 줄 cf-critic mismatch" has "cf-critic wN:p4 mismatch 실제=없음 기대=--search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=high"
+check "공통 한 줄 cf-critic mismatch" has "cf-critic wN:p4 mismatch 실제=없음 기대=--search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort=high"
 
 CASE="점검 옵션 ②⑦: agy 복구형(--conversation만) → 불일치 + 비밀 미출력"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
@@ -259,7 +264,7 @@ setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex
 run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
-check "codex 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+check "codex 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, --disable memories, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
 check "옵션 줄 1개(critic만)" eq "$(printf '%s\n' "$OUT" | grep -c '↳ 옵션')" 1
 
 CASE="점검 옵션 ⑤: --model=값 꼴 정규화 → 일치"
@@ -282,17 +287,25 @@ check "실제 값 미출력" not_has "SECRET-SENTINEL-123"
 
 CASE="점검 옵션 E1: 반복 깃발(-c other=1 -c model_reasoning_effort=high) → 일치"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
-setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","-m","gpt-6.1-sol","-c","other=1","-c","model_reasoning_effort=high"]}]}'
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","--disable","memories","-m","gpt-6.1-sol","-c","other=1","-c","model_reasoning_effort=high"]}]}'
 run
 check "종료 코드 0" eq "$RC" 0
 check "옵션 줄 없음" not_has "↳ 옵션"
 
 CASE="점검 옵션 E2: 반복 깃발(-c model_reasoning_effort=low -c other=high) → 불일치"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
-setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","-m","gpt-6.1-sol","-c","model_reasoning_effort=low","-c","other=high"]}]}'
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","--disable","memories","-m","gpt-6.1-sol","-c","model_reasoning_effort=low","-c","other=high"]}]}'
 run
 check "종료 코드 1" eq "$RC" 1
 check "불일치 표시" has "        ↳ 옵션 불일치: 다름 -c(기대 model_reasoning_effort=high) (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+
+CASE="점검 옵션 E3: 반복 깃발(--disable worktrees만 있고 --disable memories 누락) → 없음 --disable memories"
+mkstate "$LEAD" "$IMPL" "$CRITIC"
+setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex","argv":["codex","--search","--yolo","--disable","worktrees","-m","gpt-6.1-sol","-c","model_reasoning_effort=high"]}]}'
+run
+check "종료 코드 1" eq "$RC" 1
+check "누락 표시" has "        ↳ 옵션 불일치: 없음 --disable memories (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
+check "공통 한 줄 실제·기대 요약" has "cf-critic wN:p4 mismatch 실제=--search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=high 기대=--search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort=high"
 
 CASE="점검 옵션 ⑥-1: agent 프로세스 0개 → 판정 불가"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
@@ -358,7 +371,7 @@ check "종료 코드 0" eq "$RC" 0
 check "split 1회" eq "$(count "pane${T}split")" 1
 check "impl 오른쪽으로 split" eq "$(count "pane${T}split${T}wN:p3${T}--direction${T}right${T}--ratio${T}0.500")" 1
 check "run 1회" eq "$(count "pane${T}run")" 1
-check "critic 실행 명령" eq "$(field "$new" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
+check "critic 실행 명령" eq "$(field "$new" command)" "cd $ROOT && codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "critic label" eq "$(field "$new" label)" "CF 검토 · Codex"
 check "배치 impl|critic" eq "$(order)" "wN:p3 $new"
 check "다른 석 rename 없음" eq "$(grep -cE "^agent${T}rename${T}(wN:p1|wN:p3)${T}" "$LOG")" 0
@@ -377,7 +390,7 @@ check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" 
 check "배치 impl|critic" eq "$(order)" "$i $c"
 check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-argon-high --mode accept-edits --sandbox"
 check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
-check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
+check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "send-text 없음" eq "$(count "send-text")" 0
 check "배치 확인 layout 호출(secure_lead 뒤에도)" eq "$(count "pane${T}layout")" 1
 check "새 pane은 처음부터 기준 자리(move·resize 없음)" eq "$(grep -cE "^pane${T}(move|resize)${T}" "$LOG")" 0
