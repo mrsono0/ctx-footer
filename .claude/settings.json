@@ -9,10 +9,29 @@
       "Bash(brew install *)",
       "Bash(launchctl *)",
       "Bash(git push --force *)",
-      "Bash(git push -f *)"
+      "Bash(git push -f *)",
+      "Bash(rm -r *)",
+      "Bash(rm -R *)",
+      "Bash(rm -Rf *)",
+      "Bash(rm -fR *)",
+      "Bash(rm -r -f *)",
+      "Bash(rm -f -r *)",
+      "Bash(rm -R -f *)",
+      "Bash(rm -f -R *)",
+      "Bash(rm --recursive *)",
+      "Bash(env)",
+      "Bash(printenv)",
+      "Bash(printenv *)"
     ],
     "ask": [
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/settings.local.json)",
+      "Edit(~/.claude.json)",
+      "Edit(~/.codex/**)",
+      "Edit(~/.gjc/**)",
+      "Edit(~/.gemini/**)",
+      "Edit(~/.antigravity*/**)"
     ],
     "allow": [
       "Bash(herdr *)",

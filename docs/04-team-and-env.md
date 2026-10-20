@@ -30,7 +30,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 - 메시지 형식·유형·회차ID·리뷰 동결 사본·회차 상한(도구 3·문서 2)은 LFI `AGENTS.md`와 같게.
 
 ## 4. 권한·안전 설정
-- `.claude/settings.json`(프로젝트): deny `rm -rf`·`kill`·`pkill`·`killall`·`git push --force`·`git push -f`·`brew install`·`launchctl`(패턴이 맞는 형태만 — `git push origin main --force`처럼 옵션이 뒤에 오면 불일치); ask `git commit`; allow `herdr *`·`git push origin main`(정확 일치). push 전체 ask는 2026-10-13 사용자가 직접 뺐다 — allow와 맞지 않는 푸시(다른 브랜치·태그 등)는 사람 확인 없이 auto 모드 분류기 판단에 맡겨질 수 있으므로, 위임 밖 푸시 금지는 AGENTS.md 「푸시 위임」 규칙으로 지킨다.
+- `.claude/settings.json`(프로젝트): deny `rm -rf`·`kill`·`pkill`·`killall`·`git push --force`·`git push -f`·`brew install`·`launchctl`(패턴이 맞는 형태만 — `git push origin main --force`처럼 옵션이 뒤에 오면 불일치); ask `git commit`; allow `herdr *`·`git push origin main`(정확 일치). push 전체 ask는 2026-10-13 사용자가 직접 뺐다 — allow와 맞지 않는 푸시(다른 브랜치·태그 등)는 사람 확인 없이 auto 모드 분류기 판단에 맡겨질 수 있으므로, 위임 밖 푸시 금지는 AGENTS.md 「푸시 위임」 규칙으로 지킨다. 2026-10-19 #11: deny에 `rm` 재귀 변형(`-r`·`-R`·`-Rf`·`-fR`·플래그를 나눠 쓴 꼴·`--recursive`)과 `env`(인자 없음)·`printenv` 추가, ask에 사용자 범위 Claude·Codex·GJC·agy 설정 파일 편집(`Edit(~/...)`) 추가. 셸 명령(`sed -i` 등)으로 고치는 것은 이 규칙이 잡지 못한다 — AGENTS.md 「전역 설정」 규칙으로 지킨다. auto 권한 모드 세션에서는 `Edit(~/.gjc/**)` ask가 확인창 없이 통과했다(#11 실측 — 원인이 auto 모드의 자동 판단인지 경로 불일치인지는 미확인). ask는 사람 확인을 보장하지 않는 보조 장치로 보고, 전역 설정 편집 금지는 AGENTS.md 「전역 설정」 규칙으로 지킨다.
 - `.codex/rules/herdr.rules`: `herdr agent prompt`, `herdr pane send-text/send-keys`, `herdr agent list`, `herdr pane read`만 허용(LFI와 같은 4개) — critic이 --yolo로 뜰 때는 쓰이지 않는 예비 규칙.
 - `.codex/config.toml`: `project_doc_max_bytes = 65536` 하나만 둔다 — AGENTS.md가 Codex 기본 32 KiB에서 잘리지 않게(#12). 저장소가 Codex에서 신뢰된 프로젝트일 때만 적용된다.
 
