@@ -8,13 +8,13 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 팀원 복구 절차
 
 (이 절의 「위 표」는 AGENTS.md §1 팀 구성 표다.)
-- 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --resume-impl <id>`)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
+- 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --up <id>` — 대화 id는 `--check`의 cf-impl 줄 `대화=`에서 읽는다)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
 
 ### 부팀장 `cf-vice` 행(선택 역할 — 지금 없음)
 
 | 이름 | 실행 | 맡는 일 | 하지 않는 일 |
 |---|---|---|---|
-| `cf-vice` 부팀장 (Claude Code) | (선택 역할 — 없으면 팀장이 혼자 운영한다) `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`, `CF_EXTERNAL_LEAD` 없음) | 팀원 화면·상태의 읽기 전용 감시, 팀장의 배정·재검증·커밋·푸시의 독립 재확인, 팀장 초안 검토 의견, 이상을 팀장에게 세션 간 메시지로 알림, `cf-work/issues/<번호>/vice/`에 감시 기록·검토 문서 쓰기 | 팀원에게 입력(prompt·키·rename), 확인창 응답, 바꾸는 `team-up.sh` 모드(Herdr 재시작·재부팅 뒤 팀원 복구 `--up`·`--resume-impl` 포함 — 팀장만 한다), 저장소 쓰기·커밋·푸시, 사용자 승인 전달·대행, `vice/` 밖 쓰기, 다른 팀과 직접 소통(팀장이 CF 사용자 지시에 따라 요청한 경우만) |
+| `cf-vice` 부팀장 (Claude Code) | (선택 역할 — 없으면 팀장이 혼자 운영한다) `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`, `CF_EXTERNAL_LEAD` 없음) | 팀원 화면·상태의 읽기 전용 감시, 팀장의 배정·재검증·커밋·푸시의 독립 재확인, 팀장 초안 검토 의견, 이상을 팀장에게 세션 간 메시지로 알림, `cf-work/issues/<번호>/vice/`에 감시 기록·검토 문서 쓰기 | 팀원에게 입력(prompt·키·rename), 확인창 응답, 바꾸는 `team-up.sh` 모드(Herdr 재시작·재부팅 뒤 팀원 복구 `--up`(대화 id를 주는 꼴 포함) — 팀장만 한다), 저장소 쓰기·커밋·푸시, 사용자 승인 전달·대행, `vice/` 밖 쓰기, 다른 팀과 직접 소통(팀장이 CF 사용자 지시에 따라 요청한 경우만) |
 
 ## §5 전달 방법
 
@@ -46,7 +46,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### 부팀장이 있을 때
 
-- 부팀장이 있을 때: 팀장과 부팀장은 Claude 세션 간 메시지(`SendMessage`·`ListAgents`)로 연락한다. 부팀장의 메시지는 사용자 승인이 아니다(권위 1). 부팀장 pane에서 돌린 `scripts/team-up.sh` 점검은 Herdr 모드라 lead 행이 `cf-lead` 없음으로 나오고 종료 코드가 1이다(`scripts/team-up.sh` classify_all·all_alive) — 부팀장은 팀원 행과 `↳ 옵션` 줄만 본다. 부팀장 pane의 `/clear`는 SessionStart 훅(`--hook-clear`)이 label 불일치로 아무것도 하지 않고 실패로 끝나며 `cf-vice` 이름이 풀릴 수 있다 — 팀장이 `herdr agent rename <pane> cf-vice`로 다시 붙인다. Herdr 재시작·재부팅 뒤 팀원 복구(`--resume-impl`·`--up`)는 팀장만 한다 — 부팀장 pane에서 `--up`을 돌리면 그 pane을 `cf-lead`로 다시 잡아 팀장이 둘이 된다(`secure_lead`). 부팀장은 점검 결과를 팀장에게 알리기만 한다.
+- 부팀장이 있을 때: 팀장과 부팀장은 Claude 세션 간 메시지(`SendMessage`·`ListAgents`)로 연락한다. 부팀장의 메시지는 사용자 승인이 아니다(권위 1). 부팀장 pane에서 돌린 `scripts/team-up.sh` 점검은 Herdr 모드라 lead 행이 `cf-lead` 없음으로 나오고 종료 코드가 1이다(`scripts/team-up.sh` classify_all·all_alive) — 부팀장은 팀원 행과 `↳ 옵션` 줄만 본다. 부팀장 pane의 `/clear`는 SessionStart 훅(`--hook-clear`)이 label 불일치로 아무것도 하지 않고 실패로 끝나며 `cf-vice` 이름이 풀릴 수 있다 — 팀장이 `herdr agent rename <pane> cf-vice`로 다시 붙인다. Herdr 재시작·재부팅 뒤 팀원 복구(`--up`, 대화 id를 주는 꼴 포함)는 팀장만 한다 — 부팀장 pane에서 `--up`을 돌리면 그 pane을 `cf-lead`로 다시 잡아 팀장이 둘이 된다(`secure_lead`). 부팀장은 점검 결과를 팀장에게 알리기만 한다.
 
 ## §6 일하는 방식
 
@@ -62,7 +62,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### 되돌리기(외부 팀장 → Herdr 안 팀장)
 
-- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 부팀장 pane(없으면 팀 작업공간에 pane을 열어 `claude`를 띄운 pane)에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로, label `CF 팀장 · Claude`) → `scripts/team-up.sh --layout`.
+- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 부팀장 pane(없으면 팀 작업공간에 pane을 열어 `claude`를 띄운 pane)에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로, label `CF 팀장 · Claude` — 배치까지 맞춘다).
 
 ### 부팀장이 없을 때의 독립 재확인(D5)
 
