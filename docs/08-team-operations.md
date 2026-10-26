@@ -8,7 +8,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 팀원 복구 절차
 
 (이 절의 「위 표」는 AGENTS.md §1 팀 구성 표다.)
-- 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --up <id>` — 대화 id는 `--check`의 cf-impl 줄 `대화=`에서 읽는다)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
+- 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --up <id>` — 대화 id는 `--check`의 cf-impl 줄 `대화=`에서 읽고, cf-impl이 떠 있지 않으면 팀장 인계 파일에 적어 둔 최신 값을 쓴다)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
 
 ### 부팀장 `cf-vice` 행(선택 역할 — 지금 없음)
 
