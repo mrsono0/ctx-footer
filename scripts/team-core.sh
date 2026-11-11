@@ -131,7 +131,7 @@ check_ext_lead_owner_for_mutation() {
 
 # --- hc get <이름> --json 파싱 및 SEAT_CMD 옵션 대조 ---
 # 출력(단위 구분자 \x1f):
-#   t_state \x1f address \x1f app \x1f s_state \x1f turn \x1f conv_id \x1f opt_state \x1f opt_note \x1f opt_act \x1f opt_exp \x1f opt_reason \x1f _
+#   t_state \x1f address \x1f app \x1f s_state \x1f turn \x1f conv_id \x1f opt_state \x1f opt_note \x1f opt_act \x1f opt_exp \x1f opt_reason \x1f space_s \x1f _
 # shellcheck disable=SC2016
 PY_INSPECT_CORE='import json, os, shlex, sys
 
@@ -150,8 +150,8 @@ while k < len(words):
         k += 1
 exp_summary = " ".join(" ".join(u) for u in units)
 
-def emit(t_state, addr, app, s_state, turn_s, conv_id, opt_state, opt_note, opt_act, opt_exp, opt_reason):
-    print("\x1f".join([t_state, addr, app, s_state, turn_s, conv_id, opt_state, opt_note, opt_act, opt_exp, opt_reason, "_"]))
+def emit(t_state, addr, app, s_state, turn_s, conv_id, opt_state, opt_note, opt_act, opt_exp, opt_reason, space_s="없음"):
+    print("\x1f".join([t_state, addr, app, s_state, turn_s, conv_id, opt_state, opt_note, opt_act, opt_exp, opt_reason, space_s, "_"]))
     sys.exit(0 if (t_state == "live" and opt_state == "ok") else 1)
 
 if rc != "0" or not raw.strip():
@@ -172,6 +172,12 @@ app = str(st_obj.get("app") or "-")
 s_state = str(st_obj.get("state") or "")
 turn_val = d.get("turn")
 turn_s = str(turn_val) if isinstance(turn_val, int) else "-"
+labels_obj = d.get("labels") if isinstance(d.get("labels"), dict) else {}
+raw_space = labels_obj.get("herdr.space")
+if isinstance(raw_space, str) and raw_space != "":
+    space_s = raw_space.replace("\x1f", " ").replace("\n", " ").replace("\r", " ")
+else:
+    space_s = "없음"
 
 argv = d.get("argv")
 conv_id = ""
@@ -188,10 +194,10 @@ if isinstance(argv, list):
             break
 
 if t_state != "live":
-    emit(t_state, addr, app, s_state, turn_s, conv_id, "unknown", "", "", exp_summary, "종료됨(" + t_state + ")")
+    emit(t_state, addr, app, s_state, turn_s, conv_id, "unknown", "", "", exp_summary, "종료됨(" + t_state + ")", space_s)
 
 if not isinstance(argv, list) or len(argv) < 1 or any(not isinstance(x, str) for x in argv):
-    emit(t_state, addr, app, s_state, turn_s, conv_id, "unknown", "옵션 판정 불가: argv 없음", "", exp_summary, "argv 없음")
+    emit(t_state, addr, app, s_state, turn_s, conv_id, "unknown", "옵션 판정 불가: argv 없음", "", exp_summary, "argv 없음", space_s)
 
 bin_name = os.path.basename(argv[0])
 act = []
@@ -230,7 +236,7 @@ for u in units:
             missing.append("%s %s" % (flag, val))
 
 if not missing and not diff_val:
-    emit(t_state, addr, app, s_state, turn_s, conv_id, "ok", "", exp_summary, exp_summary, "")
+    emit(t_state, addr, app, s_state, turn_s, conv_id, "ok", "", exp_summary, exp_summary, "", space_s)
 
 parts = []
 if missing:
@@ -239,7 +245,7 @@ if diff_val:
     parts.append("다름 " + ", ".join(diff_val))
 diff_str = "; ".join(parts)
 act_summary = " ".join(act_parts) if act_parts else "없음"
-emit(t_state, addr, app, s_state, turn_s, conv_id, "mismatch", "옵션 불일치: " + diff_str + " (" + recover + ")", act_summary, exp_summary, diff_str)
+emit(t_state, addr, app, s_state, turn_s, conv_id, "mismatch", "옵션 불일치: " + diff_str + " (" + recover + ")", act_summary, exp_summary, diff_str, space_s)
 '
 
 S_STATUS=()
@@ -253,11 +259,12 @@ S_OPT_NOTE=()
 S_OPT_ACT=()
 S_OPT_EXP=()
 S_OPT_REASON=()
+S_SPACE=()
 opts_ok=1
 
 inspect_all() {
 	local i raw rc recover out
-	local f_st f_addr f_app f_ast f_turn f_sid f_ost f_onote f_oact f_oexp f_oreason _
+	local f_st f_addr f_app f_ast f_turn f_sid f_ost f_onote f_oact f_oexp f_oreason f_space _
 	opts_ok=1
 	S_STATUS[0]="external"
 	S_ADDR[0]="-"
@@ -267,6 +274,7 @@ inspect_all() {
 	S_SID[0]="$CLAUDE_CODE_SESSION_ID"
 	S_OPT_STATE[0]="ok"
 	S_OPT_NOTE[0]=""
+	S_SPACE[0]="-"
 	rec_id="$(read_ext_lead_id)"
 	if [ -z "$rec_id" ]; then
 		S_OPT_NOTE[0]="외부 팀장 기록: 없음"
@@ -285,7 +293,7 @@ inspect_all() {
 		if ! out="$(HC_JSON="$raw" python3 -c "$PY_INSPECT_CORE" "${SEAT_KIND[$i]}" "${SEAT_CMD[$i]}" "$recover" "$rc")"; then
 			opts_ok=0
 		fi
-		IFS=$'\x1f' read -r f_st f_addr f_app f_ast f_turn f_sid f_ost f_onote f_oact f_oexp f_oreason _ <<<"$out"
+		IFS=$'\x1f' read -r f_st f_addr f_app f_ast f_turn f_sid f_ost f_onote f_oact f_oexp f_oreason f_space _ <<<"$out"
 		S_STATUS[i]="$f_st"
 		S_ADDR[i]="$f_addr"
 		S_APP[i]="$f_app"
@@ -297,6 +305,7 @@ inspect_all() {
 		S_OPT_ACT[i]="$f_oact"
 		S_OPT_EXP[i]="$f_oexp"
 		S_OPT_REASON[i]="$f_oreason"
+		S_SPACE[i]="${f_space:-없음}"
 	done
 }
 
@@ -315,12 +324,12 @@ action_of() {
 print_table() {
 	local i st
 	echo "team-core 점검 — 저장소 $ROOT · 모드 Core(외부 팀장)"
-	printf '%-7s %-11s %-7s %-7s %-17s %-7s %s\n' 석 이름 address agent 상태 turn "--up 조치"
+	printf '%-7s %-11s %-7s %-7s %-17s %-7s %-12s %s\n' 석 이름 address agent 상태 turn herdr.space "--up 조치"
 	for i in 0 1 2; do
 		st="${S_STATUS[$i]}"
 		[ -n "${S_ASTATUS[$i]}" ] && st="$st(${S_ASTATUS[$i]})"
-		printf '%-7s %-11s %-7s %-7s %-17s %-7s %s\n' \
-			"${SEAT_ROLE[$i]}" "${SEAT_NAME[$i]}" "${S_ADDR[$i]:--}" "${S_APP[$i]:--}" "$st" "${S_TURN[$i]:--}" "$(action_of "$i")"
+		printf '%-7s %-11s %-7s %-7s %-17s %-7s %-12s %s\n' \
+			"${SEAT_ROLE[$i]}" "${SEAT_NAME[$i]}" "${S_ADDR[$i]:--}" "${S_APP[$i]:--}" "$st" "${S_TURN[$i]:--}" "${S_SPACE[$i]:-없음}" "$(action_of "$i")"
 		[ -z "${S_OPT_NOTE[$i]:-}" ] || echo "        ↳ ${S_OPT_NOTE[$i]}"
 	done
 }
@@ -426,6 +435,7 @@ print_status() {
 
 start_seat() {
 	local i=$1 name="${SEAT_NAME[$1]}" role="${SEAT_ROLE[$1]}" run_out rc new_addr
+	local -a label_args=(--label team=cf --label "role=$role")
 	shift
 	if [ "${S_STATUS[$i]}" = live ]; then
 		echo "$name: 살아 있음(${S_ADDR[$i]}); 그대로 둠"
@@ -441,7 +451,10 @@ start_seat() {
 	if [ "$i" = 1 ] && [ -z "$resume_id" ]; then
 		warn "대화 id 없음 — 새 대화로 띄움"
 	fi
-	run_out="$("$HC_BIN" run --bg --json --no-parent --outlive-parent --name "$name" --cwd "$ROOT" --label team=cf --label "role=$role" -- "$@" 2>&1)"
+	if [ -n "${CF_HERDR_SPACE:-}" ]; then
+		label_args+=(--label "herdr.space=$CF_HERDR_SPACE")
+	fi
+	run_out="$("$HC_BIN" run --bg --json --no-parent --outlive-parent --name "$name" --cwd "$ROOT" "${label_args[@]}" -- "$@" 2>&1)"
 	rc=$?
 	if [ "$rc" != 0 ]; then
 		warn "$name: hc run 거부(rc=$rc): $run_out"

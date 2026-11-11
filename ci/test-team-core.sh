@@ -3,7 +3,7 @@
 # ci/mock/hc(모의)와 임시 git 저장소만 쓰며 실제 Herdr/Core에 닿지 않는다.
 set -u
 
-unset CF_EXTERNAL_LEAD CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HC_BIN
+unset CF_EXTERNAL_LEAD CF_HERDR_SPACE CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HC_BIN
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ORIG_CORE="${ROOT}/scripts/team-core.sh"
@@ -223,13 +223,23 @@ printf '%s\n' "${EXT_SID}" >"${EXT_LOCK}"
 # ===========================================================================
 # 2. team-core.sh --check
 # ===========================================================================
-CASE="team-core --check: 두 팀원 live·옵션 일치 · 대화 id 추출 · 불일치 · 없음"
+CASE="team-core --check: 두 팀원 live·옵션 일치 · 대화 id 추출 · herdr.space 표 칸 · 불일치 · 없음"
 mkstate "impl:idle:${IMPL_CONV}" "critic:idle"
 run_core --check
 check "모두 정상 rc 0" eq "$RC" 0
 check "읽기 전용(변경 호출 없음)" no_hc_mutations
+check "--check 표 머리말에 herdr.space 칸 포함" line_matches "^석[[:space:]]+이름[[:space:]]+address[[:space:]]+agent[[:space:]]+상태[[:space:]]+turn[[:space:]]+herdr\\.space[[:space:]]+--up 조치\$"
+check "--check 표 기본 herdr.space 없음(cf-impl)" line_matches "^impl[[:space:]]+cf-impl[[:space:]]+t26[[:space:]]+agy[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+없음[[:space:]]+유지\$"
+check "--check 표 기본 herdr.space 없음(cf-critic)" line_matches "^critic[[:space:]]+cf-critic[[:space:]]+t27[[:space:]]+codex[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+없음[[:space:]]+유지\$"
 check "cf-impl 요약 줄 + 대화 id 추출" line_matches "^cf-impl t26 ok 대화=${IMPL_CONV}\$"
 check "cf-critic 요약 줄" line_matches "^cf-critic t27 ok\$"
+
+# herdr.space 라벨이 있을 때 --check 표에 값 표시 및 옵션 불일치 판정에 넣지 않음
+patch_term "cf-impl" '{"labels": {"role": "impl", "team": "cf", "herdr.space": "dummy-space-01"}}'
+run_core --check
+check "herdr.space 라벨 있어도 옵션 일치 rc 0" eq "$RC" 0
+check "--check 표 cf-impl 행에 herdr.space 값 표시" line_matches "^impl[[:space:]]+cf-impl[[:space:]]+t26[[:space:]]+agy[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+dummy-space-01[[:space:]]+유지\$"
+check "--check 표 cf-critic 행에 herdr.space 없음 유지" line_matches "^critic[[:space:]]+cf-critic[[:space:]]+t27[[:space:]]+codex[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+없음[[:space:]]+유지\$"
 
 # 옵션 불일치(cf-impl --model 값 다름, cf-critic --sandbox 등 누락)
 patch_term "cf-impl" '{"argv": ["agy", "--model", "wrong-model", "--mode", "accept-edits"]}'
@@ -247,7 +257,7 @@ check "critic unknown 없음 요약 줄" line_matches "^cf-critic - unknown 없�
 # ===========================================================================
 # 3. team-core.sh --up
 # ===========================================================================
-CASE="team-core --up: 없는 석만 기동 · 대화 id 없을 때 경고 · 대화 id 있을 때 전달 · 살아 있는 같은 이름 hc run 거부"
+CASE="team-core --up: 없는 석만 기동 · 대화 id 없을 때 경고 · 대화 id 있을 때 전달 · CF_HERDR_SPACE 유무 두 갈래 · 살아 있는 같은 이름 hc run 거부"
 # (1) cf-impl은 살아 있고 cf-critic만 없을 때 → cf-critic만 기동
 mkstate "impl:idle:${IMPL_CONV}"
 run_core --up
@@ -257,23 +267,57 @@ check "cf-critic 기동 완료(t28)" has "cf-critic: 기동 완료(t28)"
 check "hc run 1회만 호출됨" eq "$(grep -c '^run	' "${LOG}")" 1
 check "hc run이 cf-critic에만 호출됨" eq "$(grep -c '^run	.*--name	cf-critic	' "${LOG}")" 1
 
-# (2) 둘 다 없을 때 대화 id 없이 기동 → 경고 출력 후 새 대화로 기동
+# (2) 둘 다 없을 때 대화 id 없이 기동(CF_HERDR_SPACE 미설정) → 경고 출력 후 기존 라벨 인자로만 기동
 mkstate
 run_core --up
 check "둘 다 기동 rc 0" eq "$RC" 0
 check "대화 id 없음 경고 출력" has "대화 id 없음 — 새 대화로 띄움"
 check "hc run 2회 호출됨" eq "$(grep -c '^run	' "${LOG}")" 2
+check "CF_HERDR_SPACE 미설정 시 herdr.space 라벨 미전달" eq "$(grep -c 'herdr\.space' "${LOG}")" 0
+check "CF_HERDR_SPACE 미설정 시 cf-impl 기본 라벨 순서(--label team=cf --label role=impl --)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-impl${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=impl${T}--${T}agy${T}" "${LOG}")" 1
+check "CF_HERDR_SPACE 미설정 시 cf-critic 기본 라벨 순서(--label team=cf --label role=critic --)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-critic${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=critic${T}--${T}codex${T}" "${LOG}")" 1
 run_core --check
 check "기동 후 재점검 rc 0" eq "$RC" 0
 
-# (3) cf-impl 없을 때 대화 id 지정 기동 → 경고 없이 --conversation 전달
+# (3) CF_HERDR_SPACE가 빈 문자열일 때도 기존과 동일(herdr.space 미전달)
 mkstate "critic:idle"
-run_core --up "${IMPL_CONV}"
-check "대화 id 지정 기동 rc 0" eq "$RC" 0
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "대화 id 지정 기동(빈 CF_HERDR_SPACE) rc 0" eq "$RC" 0
 check "대화 id 없음 경고 미출력" not_has "대화 id 없음 — 새 대화로 띄움"
 check "--conversation 인자 전달됨" eq "$(grep -c "^run	.*--conversation	${IMPL_CONV}	" "${LOG}")" 1
+check "빈 CF_HERDR_SPACE 시 herdr.space 라벨 미전달" eq "$(grep -c 'herdr\.space' "${LOG}")" 0
 
-# (4) 살아 있는 같은 이름에 hc run 거부 경로(점검 직후 경합으로 이미 살아 있는 이름에 hc run 호출 시 거부)
+# (4) CF_HERDR_SPACE 설정 시 --label herdr.space=<값> 전달(기존 라벨 뒤, -- 앞, herdr.tab 없음) 및 --check 표 반영
+mkstate
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="dummy-space-01" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "CF_HERDR_SPACE 설정 기동 rc 0" eq "$RC" 0
+check "CF_HERDR_SPACE 설정 시 cf-impl에 --label herdr.space=dummy-space-01 전달(기존 라벨 뒤)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-impl${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=impl${T}--label${T}herdr.space=dummy-space-01${T}--${T}agy${T}" "${LOG}")" 1
+check "CF_HERDR_SPACE 설정 시 cf-critic에 --label herdr.space=dummy-space-01 전달(기존 라벨 뒤)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-critic${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=critic${T}--label${T}herdr.space=dummy-space-01${T}--${T}codex${T}" "${LOG}")" 1
+check "herdr.tab 라벨은 붙이지 않음" eq "$(grep -c 'herdr\.tab' "${LOG}")" 0
+run_core --check
+check "CF_HERDR_SPACE 기동 후 --check rc 0" eq "$RC" 0
+check "CF_HERDR_SPACE 기동 후 --check 표 cf-impl herdr.space 표시" line_matches "^impl[[:space:]]+cf-impl[[:space:]]+t28[[:space:]]+agy[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+dummy-space-01[[:space:]]+유지\$"
+check "CF_HERDR_SPACE 기동 후 --check 표 cf-critic herdr.space 표시" line_matches "^critic[[:space:]]+cf-critic[[:space:]]+t29[[:space:]]+codex[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+dummy-space-01[[:space:]]+유지\$"
+
+# (5) CF_HERDR_SPACE에 공백이 포함된 값도 가공·단어 분리 없이 그대로 전달
+mkstate "critic:idle"
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="dummy space 02" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "공백 포함 CF_HERDR_SPACE 기동 rc 0" eq "$RC" 0
+check "공백 포함 CF_HERDR_SPACE 인용 보존 전달" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-impl${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=impl${T}--label${T}herdr.space=dummy space 02${T}--${T}agy${T}" "${LOG}")" 1
+
+# (6) 살아 있는 같은 이름에 hc run 거부 경로(점검 직후 경합으로 이미 살아 있는 이름에 hc run 호출 시 거부)
 mkstate "impl:idle" "critic:idle"
 STATE_FILE="${STATE}" python3 -c '
 import json, os
