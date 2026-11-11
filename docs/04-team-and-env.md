@@ -5,7 +5,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 ## 1. 팀 (상주 3석, 조사는 cf-critic)
 | 이름 | 역할 | 실행 | 권한 |
 |---|---|---|---|
-| `cf-lead` | 팀장 (Claude Code) | `claude` (opus) — Herdr 밖 Claude 데스크톱 Code 탭 세션(외부 팀장: worktree 끔, 환경변수 `CF_EXTERNAL_LEAD=1`) — 사용자 지정 공식 팀장(2026-10-17). 되돌리면 Herdr 안 pane(§7) | 추적 파일 내용을 편집·커밋하지 않는다(예외: `i<번호>` 생성·삭제, `main`↔`i<번호>` 전환, `main`으로 `merge --ff-only`, 작업 뿌리 `cf-work/` 쓰기와 이관(AGENTS.md §9). 그 밖의 git 쓰기는 하지 않는다). 배정·이슈 관리(AGENTS.md §8)·사용자 승인·최종 확인 |
+| `cf-lead` | 팀장 (Claude Code) | `claude --name cf-lead --permission-mode auto` — 공용 herdr-core(Core) 터미널 `cf-lead`(탑주가 명부 「Core 길」 명령으로 띄움, `env CF_EXTERNAL_LEAD=1`) — 사용자 결정 2026-11-09. M5 이동 전까지는 데스크톱 외부 팀장 세션(2026-10-17 꼴). 되돌리면 데스크톱 또는 Herdr 안 pane(§7) | 추적 파일 내용을 편집·커밋하지 않는다(예외: `i<번호>` 생성·삭제, `main`↔`i<번호>` 전환, `main`으로 `merge --ff-only`, 작업 뿌리 `cf-work/` 쓰기와 이관(AGENTS.md §9). 그 밖의 git 쓰기는 하지 않는다). 배정·이슈 관리(AGENTS.md §8)·사용자 승인·최종 확인 |
 | `cf-vice` | 부팀장 (Claude Code, 선택 — 없으면 팀장이 혼자 운영한다) | `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`) | 저장소 파일을 쓰지 않고 팀원에게 입력하지 않는다. 읽기 전용 감시·독립 재확인·초안 검토 의견, 팀장과 세션 간 메시지(AGENTS.md §1·§5) |
 | `cf-impl` | 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` | **유일한 쓰기·커밋 담당**(sandbox 켬, 전역 `toolPermission` `proceed-in-sandbox`, 2026-10-15 교체 승인 — 이전 GJC `gjc --mpreset opus5-codex56-pro`) |
 | `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
@@ -15,7 +15,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 
 ## 2. 작업공간 배치
 - herdr 새 작업공간 `ctx-footer`(LFI의 wH와 분리). cwd = 이 저장소 루트.
-- 팀장 세션은 하나다: 지금은 외부 팀장(데스크톱 세션)이 팀장이고 작업공간은 (있으면) 위 `cf-vice`(부팀장), 아래 줄 가로 `cf-impl | cf-critic`. 팀원에게 입력하는 것은 팀장뿐이다. Herdr 안 팀장 형태(위 `cf-lead`)는 되돌리기 때 쓴다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀원에게 어떤 입력도 하지 않는다. agent 이름은 전역이라 접두어 `cf-`로 LFI(`lfi-`)와 겹치지 않게 한다.
+- 팀장 세션은 하나다: Core 터미널 `cf-lead` 하나(M5 이동 전까지는 데스크톱 외부 팀장 세션 하나 — 넘기는 순서는 `.claude/rules/lead-operations.md` 「잠금 인수 순서」). 팀원은 `cf-impl`·`cf-critic`(이동 전 TUI pane, 이동 뒤 Core 터미널). 팀원에게 입력하는 것은 팀장뿐이다. 데스크톱 외부 팀장·Herdr 안 팀장 형태는 되돌리기 때 쓴다. `CF_EXTERNAL_LEAD=1`이 없는 Herdr 밖 Claude 세션은 팀원에게 어떤 입력도 하지 않는다. agent 이름은 전역이라 접두어 `cf-`로 LFI(`lfi-`)와 겹치지 않게 한다.
 
 ## 3. 팀 규칙 파일 (P1에서 작성, LFI 교훈 반영)
 - `AGENTS.md`(규칙 정본, 「팀 협업 규약」 포함) + `CLAUDE.md`(`@AGENTS.md` 참조만).
@@ -65,12 +65,12 @@ LFI `scripts/team-up.sh`(점검/`--up`/`--resume-impl`, 80개 모의 테스트)�
 | `scripts/core-watch.sh --send <이름> <메시지>` | Core 팀원 전송: `status.state`가 `idle`이면 `hc send --if idle <이름> <메시지>`, `done`이면 방금 확인 직후 `hc send <이름> <메시지>`, `blocked`·`working`이면 보내지 않고 `EVENT send-refused` 출력 후 비0 종료 | 팀원 메시지 전송 |
 | `scripts/core-watch.sh --critic-new` | Core `cf-critic` 문맥 초기화: `idle`·`done` 확인 후 `/new` 전송 → `status.state == "idle"` 및 `turn` 증가 확인(Core에서는 이름이 유지되므로 `rename` 없음) | critic `/new` |
 
-- 외부 팀장 모드: `CF_EXTERNAL_LEAD=1`이고 `HERDR_PANE_ID`가 비어 있을 때 동작(`HERDR_PANE_ID`가 있으면 거부). 연결 worktree(`git rev-parse --git-dir` ≠ `--git-common-dir` 또는 `/.claude/worktrees/` 경로)와 `CLAUDE_CODE_SESSION_ID` 누락을 차단하고, 바꾸는 모드(`--up`)는 `.local/team/external-lead`에 세션 id를 배타 생성·대조해 다른 세션의 중복 조작을 막는다(옛 주인이 끝났음이 확인되면 자동 회수하고, 살아 있거나 판정 불가면 사용자 승인 뒤 `--lock claim --force`로 넘긴다). 작업공간은 팀원 석 pane에서 찾고, lead 행은 `external(이 세션)`으로 표시하며(Herdr 안 `cf-lead`가 살아 있으면 경고 줄 추가), 배치는 같은 탭에 좌우로 붙은 `impl|critic` 비율(`0.5 ± 0.01`)만 맞춘다. Herdr 안 팀장으로 되돌릴 때는 외부 팀장 입력을 멈추고 `--lock release`(또는 사용자가 `.local/team/external-lead` 삭제)·로컬 환경 `CF_EXTERNAL_LEAD` 제거·외부 세션 종료 뒤 팀 작업공간 새 pane에서 `claude` 기동 → `scripts/team-up.sh --up`을 실행한다.
+- 외부 팀장 모드: `CF_EXTERNAL_LEAD=1`이고 `HERDR_PANE_ID`가 비어 있을 때 동작(`HERDR_PANE_ID`가 있으면 거부). 연결 worktree(`git rev-parse --git-dir` ≠ `--git-common-dir` 또는 `/.claude/worktrees/` 경로)와 `CLAUDE_CODE_SESSION_ID` 누락을 차단하고, 바꾸는 모드(`--up`)는 `.local/team/external-lead`에 세션 id를 배타 생성·대조해 다른 세션의 중복 조작을 막는다(옛 주인이 끝났음이 확인되면 자동 회수하고, 살아 있거나 판정 불가면 사용자 승인 뒤 `--lock claim --force`로 넘긴다). 작업공간은 팀원 석 pane에서 찾고, lead 행은 `external(이 세션)`으로 표시하며(Herdr 안 `cf-lead`가 살아 있으면 경고 줄 추가), 배치는 같은 탭에 좌우로 붙은 `impl|critic` 비율(`0.5 ± 0.01`)만 맞춘다. Herdr 안 팀장으로 되돌릴 때는 외부 팀장 입력을 멈추고 `--lock release`(또는 사용자가 `.local/team/external-lead` 삭제)·로컬 환경 `CF_EXTERNAL_LEAD` 제거·외부 세션 종료 뒤 팀 작업공간 새 pane에서 `claude` 기동 → `scripts/team-up.sh --up`을 실행한다. Core 팀장 터미널은 띄우는 명령의 `env CF_EXTERNAL_LEAD=1`로 같은 모드에 들어오며(Core 터미널에는 `HERDR_*` 변수가 없다 — #28 M1), 거기서는 `--lock` 명령만 쓰고 팀원 기동·점검은 `scripts/team-core.sh`(M3, 아래 표)로 한다.
 - 테스트: `ci/test-team-up.sh` + `ci/mock/herdr`(LFI에서 가져와 기대값만 수정), 동작이 바뀌면 1회 실행.
 - 착수 순서(LFI와 같음): 팀장이 먼저 pane을 열고 팀원을 손으로 띄운다 → 그 팀에서 impl이 스크립트를 반영 → critic 리뷰 → 사용자 승인 후 커밋.
 
 ## 6. 외부 팀장 시작·재개 절차
-- 세션 확인 → `scripts/team-up.sh` 점검 → `scripts/team-watch.sh` 감시 → 열린 이슈와 `cf-work/issues/` 기록으로 상태 맞추기 → 재부팅 뒤 `/tmp`가 비었을 때 다시 요청할 것.
+- 세션 확인 → 점검(TUI 팀원 `scripts/team-up.sh` / Core 팀원 `scripts/team-core.sh --check`) → 감시(TUI `scripts/team-watch.sh` / Core `scripts/core-watch.sh --watch`) → 열린 이슈와 `cf-work/issues/` 기록으로 상태 맞추기 → 재부팅 뒤 `/tmp`가 비었을 때 다시 요청할 것.
 
 ## 7. 운영 관측 요지
 - 펼친 확인창은 `done`, 닫으면 `blocked`.

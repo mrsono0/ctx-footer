@@ -8,7 +8,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 팀원 복구 절차
 
 (이 절의 「위 표」는 AGENTS.md §1 팀 구성 표다.)
-- 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --up <id>` — 대화 id는 `--check`의 cf-impl 줄 `대화=`에서 읽고, cf-impl이 떠 있지 않으면 팀장 인계 파일에 적어 둔 최신 값을 쓴다)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
+- Core 팀원(M3 뒤)은 `scripts/team-core.sh --up [<agy 대화 id>]`로 같은 조건으로 띄우고 `--check`로 점검한다(docs/04 표; 상태는 `hc get --json`의 `status.state`·`turn`, 화면은 쓰지 않는다). herdr TUI 팀원은 다음과 같다. 구현 agy는 이전 대화를 `agy --conversation <id> --model gemini-4-argon-high --mode accept-edits --sandbox`(`scripts/team-up.sh --up <id>` — 대화 id는 `--check`의 cf-impl 줄 `대화=`에서 읽고, cf-impl이 떠 있지 않으면 팀장 인계 파일에 적어 둔 최신 값을 쓴다)로 잇는다(같은 id가 다른 pane에 살아 있으면 하지 않는다). critic은 요청마다 `/new`로 초기화하므로 이전 세션을 잇지 않고 `scripts/team-up.sh --up`으로 위 표의 명령 그대로 새로 띄운다 — `codex resume <id>`만으로 뜨면 기동 옵션(`--yolo`·추론 `high`)이 빠진다(2026-10-14 cf-lead 관측: herdr 재시작 뒤 복원된 critic). critic을 띄운 뒤와 `/new` 뒤에는 상태줄에 `high`, 시작 화면에 `permissions: YOLO mode`가 보이는지 확인하고, 아니면 idle일 때 `/quit` 후 `--up`으로 다시 띄운다. 외부 팀장은 Herdr 재시작을 화면으로 보지 못하므로, 감시가 팀원 `unnamed`·사라짐·예상 밖 상태로 끝나거나 herdr 명령이 실패해도 바로 점검한다.
 
 ### 부팀장 `cf-vice` 행(선택 역할 — 지금 없음)
 
@@ -53,12 +53,12 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### 전달 명령·팀원 보고
 
-- 팀장 → 팀원, 팀원 ↔ 팀원: `herdr agent prompt <이름> "<메시지>"`.
-- **팀원 → 팀장**(외부 팀장은 herdr agent가 아니라 `herdr agent prompt cf-lead`가 닿지 않는다 — Herdr 안 팀장일 때도 같은 방식으로 통일): 팀원은 `herdr agent prompt cf-lead`를 쓰지 않는다. 메시지 본문을 파일 도구로 `cf-work/issues/<번호>/<회차>/to-lead/<두 자리 순번>-<유형>.md`에 쓰고, 자기 창에 머리말 한 줄 `[보내는이→cf-lead] <유형> <회차ID>: <파일 경로> (sha256 앞 16자 — 셸로 잴 수 없으면 생략, 팀장이 잰다)`만 남긴 뒤 멈춘다(idle). 질문·`BLOCKER`·`NEED-APPROVAL`도 같다. 답은 팀장이 `herdr agent prompt`로 보낸다. (절차: docs/08 §5)
+- 팀장 → 팀원, 팀원 ↔ 팀원: TUI는 `herdr agent prompt <이름> "<메시지>"`, Core는 `scripts/core-watch.sh --send <이름> "<메시지>"`(`hc get`으로 idle 또는 done을 확인한 뒤 `hc send`; blocked·working이면 보내지 않는다).
+- **팀원 → 팀장**(외부 팀장은 herdr agent가 아니라 `herdr agent prompt cf-lead`가 닿지 않는다 — Herdr 안 팀장일 때도, Core에서도 같은 방식으로 통일): 팀원은 `herdr agent prompt cf-lead`·`hc send cf-lead`를 쓰지 않는다. 메시지 본문을 파일 도구로 `cf-work/issues/<번호>/<회차>/to-lead/<두 자리 순번>-<유형>.md`에 쓰고, 자기 창에 머리말 한 줄 `[보내는이→cf-lead] <유형> <회차ID>: <파일 경로> (sha256 앞 16자 — 셸로 잴 수 없으면 생략, 팀장이 잰다)`만 남긴 뒤 멈춘다(idle). 질문·`BLOCKER`·`NEED-APPROVAL`도 같다. 답은 팀장이 `herdr agent prompt`로 보낸다. (절차: docs/08 §5)
 
 ### 전송 실패 시 pull
 
-- 팀원 사이에서 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull).
+- 팀원 사이에서 보내기가 실패하면 회신을 자기 창에 쓴다. 요청자가 `herdr agent wait <이름> --until idle --until done` 뒤 `herdr agent read <이름> --source recent-unwrapped`로 읽어 회차 폴더에 저장한다(pull). Core에서는 `hc wait`/`hc get <이름> --json`으로 done을 확인한 뒤 `status.msg`(마지막 줄)와 회차 폴더 파일로 읽는다 — `hc read`는 쓰지 않는다.
 
 
 
@@ -76,7 +76,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### critic 초기화(/new)·이름 재등록 절차
 
-- critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`.
+- Core(M3 뒤): `scripts/core-watch.sh --critic-new`로 `/new`를 보내고 `hc get`이 idle·turn 증가인지 본다. 이름 재등록은 없다(Core 이름은 터미널 이름). worktree 선택창이 뜨면 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `hc keys cf-critic enter`로 1번(현재 worktree)을 고른다. TUI는 다음과 같다. critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`.
 
 ### agy 확인창 예외(Context7)·sandbox 밖 명령
 
@@ -85,7 +85,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 확인창 펼쳐 읽기(ctrl+g·Page Down)·zoom 금지
 
 (아래 「위 「확인창이 떠 있으면 보내지 않는다」」·「위 「포커스는 옮기지 않는다」」는 AGENTS.md §5 「보내기 전에 받는 쪽 입력란을 본다」 항목을 가리킨다.)
-- 확인창 내용이 잘려 보이면 팀장은 zoom 없이 펼친다: `herdr pane send-keys <pane> ctrl+g`(agy 명령 확인창) 뒤 `herdr pane read <pane> --source visible`로 화면에 「Full Command」가 보이는지 확인하고 읽는다. 표시가 `(a–b of N lines)`이고 b가 N보다 작으면 `herdr pane send-text <pane> $'\e[6~'`(Page Down — herdr `send-keys`에는 이 키 이름이 없다. `$'…'`를 해석하는 bash·zsh에서)를 보내고 다시 읽기를 b가 N이 될 때까지 되풀이한 뒤 `esc`. Page Down과 `esc`는 펼친 화면(「Full Command」)이 보일 때만 보낸다 — 안 보이면 더 보내지 않고 사용자에게 알린다(선택 메뉴에서는 Page Down이 커서를 마지막 항목으로, `esc`가 확인창 취소로 이어질 수 있다). 답하기 전에 원래 확인창으로 돌아왔고 커서가 1번에 있는지 `pane read`로 확인한다. MCP 도구 확인창의 `ctrl+o` 펼침은 같은 방식으로 시도하되 미시험이라, 펼쳐지지 않으면 사용자에게 알린다. 위 「확인창이 떠 있으면 보내지 않는다」의 예외는 이렇게 팀장이 확인창을 읽고 답하려고 보내는 키뿐이다. `herdr pane zoom`은 쓰지 않는다 — 그 pane으로 포커스를 옮긴다(2026-10-17 관측; 위 「포커스는 옮기지 않는다」와 어긋난다).
+- Core: 확인창은 `hc get <이름> --json`의 `status.state == blocked`와 `status.msg`로 읽고, 팀장은 `scripts/core-watch.sh --approve-once <이름> --allow-file <회차 지시서의 허용 파일>`(그 파일의 한 줄과 확인창 명령 원문이 바이트 그대로 일치할 때만 1번 「이번만」 — docs/04 표. 허용 파일이 없거나 맞는 줄이 없으면 아무것도 답하지 않는다)으로 답한다. `msg`가 비거나 잘리면 응답하지 않고 사용자에게 알린다. 아래 펼치기 절차는 TUI 전용이다. 확인창 내용이 잘려 보이면 팀장은 zoom 없이 펼친다: `herdr pane send-keys <pane> ctrl+g`(agy 명령 확인창) 뒤 `herdr pane read <pane> --source visible`로 화면에 「Full Command」가 보이는지 확인하고 읽는다. 표시가 `(a–b of N lines)`이고 b가 N보다 작으면 `herdr pane send-text <pane> $'\e[6~'`(Page Down — herdr `send-keys`에는 이 키 이름이 없다. `$'…'`를 해석하는 bash·zsh에서)를 보내고 다시 읽기를 b가 N이 될 때까지 되풀이한 뒤 `esc`. Page Down과 `esc`는 펼친 화면(「Full Command」)이 보일 때만 보낸다 — 안 보이면 더 보내지 않고 사용자에게 알린다(선택 메뉴에서는 Page Down이 커서를 마지막 항목으로, `esc`가 확인창 취소로 이어질 수 있다). 답하기 전에 원래 확인창으로 돌아왔고 커서가 1번에 있는지 `pane read`로 확인한다. MCP 도구 확인창의 `ctrl+o` 펼침은 같은 방식으로 시도하되 미시험이라, 펼쳐지지 않으면 사용자에게 알린다. 위 「확인창이 떠 있으면 보내지 않는다」의 예외는 이렇게 팀장이 확인창을 읽고 답하려고 보내는 키뿐이다. `herdr pane zoom`은 쓰지 않는다 — 그 pane으로 포커스를 옮긴다(2026-10-17 관측; 위 「포커스는 옮기지 않는다」와 어긋난다).
 
 ### 부팀장이 있을 때
 
@@ -124,7 +124,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### 되돌리기(외부 팀장 → Herdr 안 팀장)
 
-- **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 부팀장 pane(없으면 팀 작업공간에 pane을 열어 `claude`를 띄운 pane)에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로, label `CF 팀장 · Claude` — 배치까지 맞춘다).
+- **되돌리기(Core 팀장 → 데스크톱 외부 팀장)**: Core 팀장이 팀원 입력을 멈추고 `scripts/team-up.sh --lock release` → 사용자가 Core 팀장 터미널을 지우고 탑주에 알림 → 데스크톱 세션(로컬 환경 `CF_EXTERNAL_LEAD=1`)에서 `--lock claim` 뒤 재개 절차. Core 팀원을 TUI로 되돌리려면 사용자 승인 뒤 `scripts/team-core.sh --down cf-impl`과 `scripts/team-core.sh --down cf-critic`을 각각(그 팀원이 idle·done일 때만) 성공시킨 다음 `scripts/team-up.sh --up <대화 id>`. **되돌리기(외부 팀장 → Herdr 안 팀장)**: 외부 팀장이 팀원 입력을 멈추고 → 사용자가 데스크톱 로컬 환경에서 `CF_EXTERNAL_LEAD`를 빼고 `.local/team/external-lead`를 지운 뒤 외부 팀장 세션을 닫고 → 부팀장 pane(없으면 팀 작업공간에 pane을 열어 `claude`를 띄운 pane)에서 `scripts/team-up.sh --up`(이 pane을 `cf-lead`로, label `CF 팀장 · Claude` — 배치까지 맞춘다).
 
 ### 부팀장이 없을 때의 독립 재확인(D5)
 
