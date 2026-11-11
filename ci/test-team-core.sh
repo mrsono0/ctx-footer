@@ -3,12 +3,13 @@
 # ci/mock/hc(모의)와 임시 git 저장소만 쓰며 실제 Herdr/Core에 닿지 않는다.
 set -u
 
-unset CF_EXTERNAL_LEAD CF_HERDR_SPACE CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HC_BIN
+unset CF_EXTERNAL_LEAD CF_HERDR_SPACE CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HC_BIN HERDR_APP_BIN CF_APP_RETRIES CF_APP_RETRY_SLEEP
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ORIG_CORE="${ROOT}/scripts/team-core.sh"
 ORIG_WATCH="${ROOT}/scripts/core-watch.sh"
 MOCK_HC="${ROOT}/ci/mock/hc"
+MOCK_APP="${ROOT}/ci/mock/herdr-app"
 TEST_BASH="${TEAM_CORE_BASH:-${TEAM_UP_BASH:-bash}}"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/cf-team-core-test.XXXXXX")" || exit 1
@@ -17,11 +18,18 @@ trap cleanup EXIT
 
 mkdir -p "${TMP}/bin"
 cp "${ROOT}/ci/mock/hc" "${TMP}/bin/hc"
-chmod +x "${TMP}/bin/hc"
+cp "${ROOT}/ci/mock/herdr-app" "${TMP}/bin/herdr-app"
+chmod +x "${TMP}/bin/hc" "${TMP}/bin/herdr-app"
 MOCK_HC="${TMP}/bin/hc"
+MOCK_APP="${TMP}/bin/herdr-app"
 
 STATE="${TMP}/hc-state.json"
 LOG="${TMP}/hc-calls.log"
+APP_STATE="${TMP}/app-state.json"
+APP_LOG="${TMP}/app-calls.log"
+printf '{"spaces": []}\n' >"${APP_STATE}"
+: >"${APP_LOG}"
+export HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02
 T=$'\t'
 PASS=0
 FAIL=0
@@ -141,10 +149,22 @@ with open(path, "w", encoding="utf-8") as f:
 '
 }
 
+mkappstate() {
+	if [ "$#" -ge 1 ]; then
+		printf '%s\n' "$1" >"${APP_STATE}"
+	else
+		printf '{"spaces": []}\n' >"${APP_STATE}"
+	fi
+	: >"${APP_LOG}"
+}
+
 run_core() {
 	: >"${LOG}"
+	: >"${APP_LOG}"
 	OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
 		HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+		HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+		CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
 		"${TEST_BASH}" "${CORE_SCRIPT}" "$@" 2>&1)"
 	RC=$?
 }
@@ -329,6 +349,243 @@ json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
 run_core --up "${IMPL_CONV}"
 check "살아 있는 같은 이름 hc run 거부 시 rc 1" eq "$RC" 1
 check "hc 거부 원문 보고" has 'error: terminal "cf-impl" is already live'
+
+# ===========================================================================
+# 3b. team-core.sh --up App 탭 이름 부착 (⑴~⑻)
+# ===========================================================================
+CASE="team-core --up App 탭 이름 부착: ⑴ App 있음 · ⑵ 2번째 확인에 탭 나타남 · ⑶ 탭 끝내 없음 · ⑷ App 실행 파일 없음 · ⑸ 같은 탭 다른 터미널 · ⑹ CF_HERDR_SPACE 비어 있음/없음 · ⑺ rename 실패 응답 · ⑻ 살아 있는 석"
+
+# ⑴ App 있음: rename 1회, --id·--name 인자 검사
+mkstate "critic:idle"
+mkappstate '{
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [
+    {"id": "tb-dummy-lead", "name": "1", "terminals": [{"terminal": "t25", "name": "cf-lead"}]},
+    {"id": "tb-dummy-impl", "name": "2", "terminals": [{"terminal": "t28", "name": "cf-impl"}]},
+    {"id": "tb-dummy-critic", "name": "cf-critic", "terminals": [{"terminal": "t27", "name": "cf-critic"}]}
+   ]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑴ App 있음: 기동 rc 0" eq "$RC" 0
+check "⑴ App 있음: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑴ App 있음: 경고 미출력" not_has "탭 이름을" "이름 변경 실패"
+check "⑴ App 있음: herdr-app ls 1회 호출" eq "$(grep -c '^ls$' "${APP_LOG}")" 1
+check "⑴ App 있음: herdr-app do tab.rename 1회 호출" eq "$(grep -c '^do	tab\.rename	' "${APP_LOG}")" 1
+check "⑴ App 있음: --id·--name 인자 정확 일치" eq "$(grep -c "^do${T}tab\\.rename${T}--id${T}tb-dummy-impl${T}--name${T}cf-impl\$" "${APP_LOG}")" 1
+check "⑴ App 있음: App 전체 호출 2회(ls + do tab.rename만)" eq "$(wc -l <"${APP_LOG}" | tr -d ' ')" 2
+
+# ⑵ 탭이 2번째 확인에 나타남: rename 1회
+mkstate "critic:idle"
+mkappstate '{
+ "appear_on_ls": 2,
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [
+    {"id": "tb-delayed-28", "name": "2", "terminals": [{"terminal": "t28", "name": "cf-impl"}]}
+   ]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑵ 2번째 확인에 탭 나타남: rc 0" eq "$RC" 0
+check "⑵ 2번째 확인에 탭 나타남: 경고 미출력" not_has "탭 이름을" "이름 변경 실패"
+check "⑵ 2번째 확인에 탭 나타남: herdr-app ls 2회 호출" eq "$(grep -c '^ls$' "${APP_LOG}")" 2
+check "⑵ 2번째 확인에 탭 나타남: herdr-app do tab.rename 1회 호출" eq "$(grep -c '^do	tab\.rename	' "${APP_LOG}")" 1
+check "⑵ 2번째 확인에 탭 나타남: --id·--name 인자 정확 일치" eq "$(grep -c "^do${T}tab\\.rename${T}--id${T}tb-delayed-28${T}--name${T}cf-impl\$" "${APP_LOG}")" 1
+
+# ⑶ 탭 끝내 없음: rename 0회·경고·rc 0
+mkstate "critic:idle"
+mkappstate '{
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [
+    {"id": "tb-other-only", "name": "1", "terminals": [{"terminal": "t25", "name": "cf-lead"}]}
+   ]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑶ 탭 끝내 없음: rc 0" eq "$RC" 0
+check "⑶ 탭 끝내 없음: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑶ 탭 끝내 없음: 경고 출력" has "team-core: cf-impl: 공간 'cf'에서 탭을 찾지 못해 탭 이름을 붙이지 못함(t28)"
+check "⑶ 탭 끝내 없음: herdr-app ls 상한(3회)만큼만 호출" eq "$(grep -c '^ls$' "${APP_LOG}")" 3
+check "⑶ 탭 끝내 없음: rename 호출 0회" eq "$(grep -c '^do	' "${APP_LOG}")" 0
+
+# ⑷ App 실행 파일 없음: 경고·rc 0
+mkstate "critic:idle"
+mkappstate
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${TMP}/bin/no-such-herdr-app" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑷ App 실행 파일 없음: rc 0" eq "$RC" 0
+check "⑷ App 실행 파일 없음: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑷ App 실행 파일 없음: 경고 출력" has "이 없어 탭 이름을 붙이지 못함(t28)"
+check "⑷ App 실행 파일 없음: App 호출 0회" eq "$(wc -l <"${APP_LOG}" | tr -d ' ')" 0
+
+# ⑸ 같은 탭에 다른 터미널: rename 0회·경고
+mkstate "critic:idle"
+mkappstate '{
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [
+    {
+     "id": "tb-shared-01",
+     "name": "1",
+     "terminals": [
+      {"terminal": "t25", "name": "cf-lead"},
+      {"terminal": "t28", "name": "cf-impl"}
+     ]
+    }
+   ]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑸ 같은 탭 다른 터미널: rc 0" eq "$RC" 0
+check "⑸ 같은 탭 다른 터미널: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑸ 같은 탭 다른 터미널: 경고 출력" has "team-core: cf-impl: 탭(tb-shared-01)에 다른 터미널이 함께 있어 탭 이름을 바꾸지 않음(t28)"
+check "⑸ 같은 탭 다른 터미널: herdr-app ls 1회 호출(재시도 없음)" eq "$(grep -c '^ls$' "${APP_LOG}")" 1
+check "⑸ 같은 탭 다른 터미널: rename 호출 0회" eq "$(grep -c '^do	' "${APP_LOG}")" 0
+
+# ⑹ CF_HERDR_SPACE 비어 있음/없음: App 호출 0회
+mkstate "critic:idle"
+mkappstate '{
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [{"id": "tb-28", "name": "2", "terminals": [{"terminal": "t28"}]}]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID -u CF_HERDR_SPACE CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑹(없음) CF_HERDR_SPACE 미설정: rc 0" eq "$RC" 0
+check "⑹(없음) CF_HERDR_SPACE 미설정: App 호출 0회" eq "$(wc -l <"${APP_LOG}" | tr -d ' ')" 0
+
+mkstate "critic:idle"
+: >"${LOG}"
+: >"${APP_LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑹(비어 있음) 빈 CF_HERDR_SPACE: rc 0" eq "$RC" 0
+check "⑹(비어 있음) 빈 CF_HERDR_SPACE: App 호출 0회" eq "$(wc -l <"${APP_LOG}" | tr -d ' ')" 0
+
+# ⑺ rename 실패 응답: 경고·rc 0
+mkstate "critic:idle"
+mkappstate '{
+ "rename_response": {"ok": false, "error": "tab locked"},
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [{"id": "tb-fail-json", "name": "2", "terminals": [{"terminal": "t28"}]}]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑺(ok:false) rename 실패 응답: rc 0" eq "$RC" 0
+check "⑺(ok:false) rename 실패 응답: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑺(ok:false) rename 실패 응답: 경고 출력" has "team-core: cf-impl: 탭(tb-fail-json) 이름 변경 실패(rc=0):"
+check "⑺(ok:false) rename 실패 응답: ls 1회·do tab.rename 1회 호출" eq "$(grep -c '^do	tab\.rename	' "${APP_LOG}")" 1
+
+mkstate "critic:idle"
+mkappstate '{
+ "rename_rc": 1,
+ "rename_stderr": "error: tab.rename failed",
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [{"id": "tb-fail-rc", "name": "2", "terminals": [{"terminal": "t28"}]}]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑺(비0 종료) rename 실패 응답: rc 0" eq "$RC" 0
+check "⑺(비0 종료) rename 실패 응답: 기동 완료 출력" has "cf-impl: 기동 완료(t28)"
+check "⑺(비0 종료) rename 실패 응답: 경고 출력" has "team-core: cf-impl: 탭(tb-fail-rc) 이름 변경 실패(rc=1):"
+check "⑺(비0 종료) rename 실패 응답: ls 1회·do tab.rename 1회 호출" eq "$(grep -c '^do	tab\.rename	' "${APP_LOG}")" 1
+
+# ⑻ 살아 있는 석(기동 안 함): App 호출 0회
+mkstate "impl:idle:${IMPL_CONV}" "critic:idle"
+mkappstate '{
+ "spaces": [
+  {
+   "id": "cf",
+   "name": "cf",
+   "tabs": [
+    {"id": "tb-26", "name": "cf-impl", "terminals": [{"terminal": "t26"}]},
+    {"id": "tb-27", "name": "cf-critic", "terminals": [{"terminal": "t27"}]}
+   ]
+  }
+ ]
+}'
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CF_HERDR_SPACE="cf" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --up "${IMPL_CONV}" 2>&1)"
+RC=$?
+check "⑻ 살아 있는 석: rc 0" eq "$RC" 0
+check "⑻ 살아 있는 석: 그대로 둠 출력" has "cf-impl: 살아 있음(t26); 그대로 둠" "cf-critic: 살아 있음(t27); 그대로 둠"
+check "⑻ 살아 있는 석: App 호출 0회" eq "$(wc -l <"${APP_LOG}" | tr -d ' ')" 0
 
 # ===========================================================================
 # 4. team-core.sh --status

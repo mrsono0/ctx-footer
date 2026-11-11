@@ -8,6 +8,10 @@
 set -u
 
 HC_BIN="${HC_BIN:-hc}"
+HERDR_APP_BIN="${HERDR_APP_BIN:-herdr-app}"
+APP_RETRIES="${CF_APP_RETRIES:-10}"
+APP_RETRY_SLEEP="${CF_APP_RETRY_SLEEP:-0.5}"
+case "$APP_RETRIES" in '' | *[!0-9]* | 0) APP_RETRIES=10 ;; esac
 IMPL_MODEL="gemini-4-argon-high"
 
 SEAT_ROLE=(lead impl critic)
@@ -433,6 +437,125 @@ print_status() {
 	echo "이 메시지는 승인이 아니다."
 }
 
+# herdr-app ls JSON에서 공간 id == space_id인 공간의 탭 중 terminals에 new_addr가 있는 탭 탐색
+# 출력(단위 구분자 \x1f):
+#   sole \x1f <tab_id> | shared \x1f <tab_id> | ambiguous \x1f - | not_found \x1f - | ls_error \x1f -
+# shellcheck disable=SC2016
+PY_FIND_APP_TAB='import json, os, sys
+
+space_id, new_addr, rc = sys.argv[1:4]
+raw = os.environ.get("APP_LS_JSON", "")
+
+if rc != "0" or not raw.strip():
+    print("ls_error\x1f-")
+    sys.exit(0)
+
+try:
+    d = json.loads(raw)
+except Exception:
+    print("ls_error\x1f-")
+    sys.exit(0)
+
+if not isinstance(d, dict) or not isinstance(d.get("spaces"), list):
+    print("ls_error\x1f-")
+    sys.exit(0)
+
+matched_tabs = []
+for sp in d["spaces"]:
+    if not isinstance(sp, dict) or sp.get("id") != space_id:
+        continue
+    tabs = sp.get("tabs")
+    if not isinstance(tabs, list):
+        continue
+    for tab in tabs:
+        if not isinstance(tab, dict):
+            continue
+        terms = tab.get("terminals")
+        if not isinstance(terms, list):
+            continue
+        if any(isinstance(t, dict) and t.get("terminal") == new_addr for t in terms):
+            matched_tabs.append(tab)
+
+if not matched_tabs:
+    print("not_found\x1f-")
+    sys.exit(0)
+
+if len(matched_tabs) > 1:
+    print("ambiguous\x1f-")
+    sys.exit(0)
+
+tab = matched_tabs[0]
+tab_id = tab.get("id")
+if not isinstance(tab_id, str) or not tab_id.strip():
+    print("ls_error\x1f-")
+    sys.exit(0)
+
+clean_id = tab_id.replace("\x1f", "").replace("\n", "").replace("\r", "")
+terms = tab.get("terminals")
+if len(terms) == 1 and isinstance(terms[0], dict) and terms[0].get("terminal") == new_addr:
+    print("sole\x1f" + clean_id)
+else:
+    print("shared\x1f" + clean_id)
+'
+
+# herdr-app do tab.rename 응답 JSON이 {"ok": true}이고 종료 코드가 0인지 확인
+# shellcheck disable=SC2016
+PY_CHECK_APP_OK='import json, os, sys
+if sys.argv[1] != "0":
+    sys.exit(1)
+try:
+    d = json.loads(os.environ.get("RENAME_OUT", ""))
+    sys.exit(0 if isinstance(d, dict) and d.get("ok") is True else 1)
+except Exception:
+    sys.exit(1)
+'
+
+rename_app_tab() {
+	local name="$1" new_addr="$2" tries=0 ls_out rc info status tab_id rename_out rename_one_line
+	if ! command -v "$HERDR_APP_BIN" >/dev/null 2>&1; then
+		warn "$name: herdr-app 명령($HERDR_APP_BIN)이 없어 탭 이름을 붙이지 못함($new_addr)"
+		return 0
+	fi
+	if [ -z "$new_addr" ] || [ "$new_addr" = "-" ]; then
+		warn "$name: 새 터미널 주소를 알 수 없어 탭 이름을 붙이지 못함"
+		return 0
+	fi
+	while [ "$tries" -lt "$APP_RETRIES" ]; do
+		ls_out="$("$HERDR_APP_BIN" ls 2>/dev/null)"
+		rc=$?
+		info="$(APP_LS_JSON="$ls_out" python3 -c "$PY_FIND_APP_TAB" "$CF_HERDR_SPACE" "$new_addr" "$rc")"
+		IFS=$'\x1f' read -r status tab_id <<<"$info"
+		case "$status" in
+		sole)
+			rename_out="$("$HERDR_APP_BIN" "do" tab.rename --id "$tab_id" --name "$name" 2>&1)"
+			rc=$?
+			if ! RENAME_OUT="$rename_out" python3 -c "$PY_CHECK_APP_OK" "$rc"; then
+				rename_one_line="${rename_out//$'\n'/ }"
+				rename_one_line="${rename_one_line//$'\r'/ }"
+				warn "$name: 탭($tab_id) 이름 변경 실패(rc=$rc): $rename_one_line"
+			fi
+			return 0
+			;;
+		shared)
+			warn "$name: 탭($tab_id)에 다른 터미널이 함께 있어 탭 이름을 바꾸지 않음($new_addr)"
+			return 0
+			;;
+		ambiguous)
+			warn "$name: 공간 '$CF_HERDR_SPACE'에서 탭이 여러 개 조회되어 탭 이름을 바꾸지 않음($new_addr)"
+			return 0
+			;;
+		ls_error)
+			warn "$name: herdr-app ls 실패로 탭 이름을 붙이지 못함($new_addr)"
+			return 0
+			;;
+		esac
+		tries=$((tries + 1))
+		[ "$tries" -ge "$APP_RETRIES" ] || sleep "$APP_RETRY_SLEEP"
+	done
+	warn "$name: 공간 '$CF_HERDR_SPACE'에서 탭을 찾지 못해 탭 이름을 붙이지 못함($new_addr)"
+	return 0
+}
+
 start_seat() {
 	local i=$1 name="${SEAT_NAME[$1]}" role="${SEAT_ROLE[$1]}" run_out rc new_addr
 	local -a label_args=(--label team=cf --label "role=$role")
@@ -464,6 +587,9 @@ start_seat() {
 try: print(json.loads(os.environ["RAW_OUT"]).get("address") or "-")
 except Exception: print("-")')"
 	echo "$name: 기동 완료($new_addr)"
+	if [ -n "${CF_HERDR_SPACE:-}" ]; then
+		rename_app_tab "$name" "$new_addr"
+	fi
 	return 0
 }
 
