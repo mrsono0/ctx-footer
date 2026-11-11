@@ -1,0 +1,525 @@
+#!/usr/bin/env bash
+# scripts/team-core.sh · scripts/core-watch.sh 모의 단위 테스트.
+# ci/mock/hc(모의)와 임시 git 저장소만 쓰며 실제 Herdr/Core에 닿지 않는다.
+set -u
+
+unset CF_EXTERNAL_LEAD CF_WORK_ROOT CLAUDE_CODE_SESSION_ID HERDR_ENV HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HC_BIN
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ORIG_CORE="${ROOT}/scripts/team-core.sh"
+ORIG_WATCH="${ROOT}/scripts/core-watch.sh"
+MOCK_HC="${ROOT}/ci/mock/hc"
+TEST_BASH="${TEAM_CORE_BASH:-${TEAM_UP_BASH:-bash}}"
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/cf-team-core-test.XXXXXX")" || exit 1
+cleanup() { [ -n "$TMP" ] && [ -d "$TMP" ] && rm -rf -- "$TMP"; }
+trap cleanup EXIT
+
+mkdir -p "${TMP}/bin"
+cp "${ROOT}/ci/mock/hc" "${TMP}/bin/hc"
+chmod +x "${TMP}/bin/hc"
+MOCK_HC="${TMP}/bin/hc"
+
+STATE="${TMP}/hc-state.json"
+LOG="${TMP}/hc-calls.log"
+T=$'\t'
+PASS=0
+FAIL=0
+CASE=""
+OUT=""
+RC=0
+
+EXT_SID="a1b2c3d4-0000-4000-8000-000000000001"
+OTHER_SID="deadbeef-9999-4000-8000-000000000002"
+IMPL_CONV="01a126cd-0000-4000-8000-000000000001"
+
+# 임시 메인 git 저장소 및 연결 worktree 구성
+TEST_REPO_RAW="${TMP}/repo"
+WT_LINKED="${TMP}/wt-linked"
+mkdir -p "${TEST_REPO_RAW}/scripts" "${TEST_REPO_RAW}/.claude/worktrees/w1" "${TEST_REPO_RAW}/.local/team"
+cp "${ORIG_CORE}" "${TEST_REPO_RAW}/scripts/team-core.sh"
+cp "${ORIG_WATCH}" "${TEST_REPO_RAW}/scripts/core-watch.sh"
+chmod +x "${TEST_REPO_RAW}/scripts/team-core.sh" "${TEST_REPO_RAW}/scripts/core-watch.sh"
+
+(
+	cd "${TEST_REPO_RAW}" &&
+		HOME="${TMP}" XDG_CONFIG_HOME="${TMP}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git init -q -b main &&
+		printf '.local/\n.claude/\n' >.gitignore &&
+		HOME="${TMP}" XDG_CONFIG_HOME="${TMP}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git add .gitignore scripts/team-core.sh scripts/core-watch.sh &&
+		HOME="${TMP}" XDG_CONFIG_HOME="${TMP}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git -c user.name=t -c user.email=t@t commit -q -m init &&
+		HOME="${TMP}" XDG_CONFIG_HOME="${TMP}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git worktree add -q "${WT_LINKED}" -b linked
+) || exit 1
+
+TEST_REPO="$(cd "${TEST_REPO_RAW}" && pwd -P)"
+CORE_SCRIPT="${TEST_REPO}/scripts/team-core.sh"
+WATCH_SCRIPT="${TEST_REPO}/scripts/core-watch.sh"
+EXT_LOCK="${TEST_REPO}/.local/team/external-lead"
+printf '%s\n' "${EXT_SID}" >"${EXT_LOCK}"
+
+# 기본 정상 상태 생성 도우미:
+# 인자: "impl[:s_state[:conv_id[:t_state]]]" "critic[:s_state[:t_state]]"
+mkstate() {
+	TEST_REPO_ENV="${TEST_REPO}" python3 - "$@" >"${STATE}" <<'PY'
+import json, os, sys
+
+cwd = os.environ["TEST_REPO_ENV"]
+terms = []
+for arg in sys.argv[1:]:
+    parts = (arg.split(":") + ["", "", "", ""])[:4]
+    role = parts[0]
+    if role == "impl":
+        s_state = parts[1] or "idle"
+        conv = parts[2]
+        t_state = parts[3] or "live"
+        argv = ["agy"]
+        if conv:
+            argv += ["--conversation", conv]
+        argv += ["--model", "gemini-4-argon-high", "--mode", "accept-edits", "--sandbox"]
+        terms.append({
+            "address": "t26",
+            "argv": argv,
+            "created_at": 1776478400338,
+            "cwd": cwd,
+            "exit_code": None if t_state == "live" else 0,
+            "id": "019da031-76c2-74a1-a6e1-19fd6b73ccad",
+            "labels": {"role": "impl", "team": "cf"},
+            "name": "cf-impl",
+            "parent": None,
+            "pid": 14635 if t_state == "live" else None,
+            "pty": {"cols": 80, "rows": 24},
+            "state": t_state,
+            "status": {"app": "agy", "msg": "", "state": s_state},
+            "title": "agy",
+            "turn": 1,
+        })
+    elif role == "critic":
+        s_state = parts[1] or "idle"
+        t_state = parts[2] or "live"
+        argv = [
+            "codex", "--search", "--yolo", "--disable", "worktrees",
+            "--disable", "memories", "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high",
+        ]
+        terms.append({
+            "address": "t27",
+            "argv": argv,
+            "created_at": 1776478403109,
+            "cwd": cwd,
+            "exit_code": None if t_state == "live" else 0,
+            "id": "019da031-8195-7552-ac25-df10c19d7fb5",
+            "labels": {"role": "critic", "team": "cf"},
+            "name": "cf-critic",
+            "parent": None,
+            "pid": 14957 if t_state == "live" else None,
+            "pty": {"cols": 80, "rows": 24},
+            "state": t_state,
+            "status": {"app": "codex", "msg": "", "state": s_state},
+            "title": "codex",
+            "turn": 1,
+        })
+json.dump({"terminals": terms, "next": 28}, sys.stdout, ensure_ascii=False, indent=1)
+PY
+}
+
+patch_term() {
+	local target="$1" py_patch="$2"
+	STATE_FILE="${STATE}" TARGET_NAME="${target}" PY_PATCH="${py_patch}" python3 -c '
+import json, os
+path = os.environ["STATE_FILE"]
+target = os.environ["TARGET_NAME"]
+patch = json.loads(os.environ["PY_PATCH"])
+with open(path, "r", encoding="utf-8") as f:
+    st = json.load(f)
+for t in st.get("terminals", []):
+    if t.get("name") == target or t.get("address") == target:
+        for k, v in patch.items():
+            if k == "status" and isinstance(v, dict):
+                t.setdefault("status", {}).update(v)
+            else:
+                t[k] = v
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(st, f, ensure_ascii=False, indent=1)
+'
+}
+
+run_core() {
+	: >"${LOG}"
+	OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+		HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+		"${TEST_BASH}" "${CORE_SCRIPT}" "$@" 2>&1)"
+	RC=$?
+}
+
+run_watch_cmd() {
+	: >"${LOG}"
+	OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+		HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+		CF_RETRIES=5 CF_RETRY_SLEEP=0.05 \
+		"${TEST_BASH}" "${WATCH_SCRIPT}" "$@" 2>&1)"
+	RC=$?
+}
+
+check() {
+	local desc="$1"
+	shift
+	if "$@"; then
+		PASS=$((PASS + 1))
+	else
+		FAIL=$((FAIL + 1))
+		echo "FAIL [$CASE] $desc" >&2
+		echo "  --- 출력 (rc=$RC)" >&2
+		printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+		echo "  --- hc 호출" >&2
+		sed 's/^/  > /' "$LOG" >&2
+	fi
+}
+
+eq() { [ "$1" = "$2" ] || { echo "  기대 '$2' / 실제 '$1'" >&2; return 1; }; }
+has() { local s; for s in "$@"; do case "$OUT" in *"$s"*) ;; *) return 1 ;; esac; done; }
+not_has() { local s; for s in "$@"; do case "$OUT" in *"$s"*) echo "  출력에 없어야 할 '$s' 포함" >&2; return 1 ;; esac; done; }
+line_matches() { printf '%s\n' "$OUT" | grep -E "$1" >/dev/null; }
+no_hc_mutations() { [ "$(grep -vcE "^(get|ls|list)(${T}|\$)" "$LOG")" = 0 ]; }
+
+# ===========================================================================
+# 1. team-core.sh 전제 가드
+# ===========================================================================
+CASE="team-core: 전제 가드(CF_EXTERNAL_LEAD 누락 · HERDR_PANE_ID 존재 · CLAUDE_CODE_SESSION_ID 누락 · worktree 차단)"
+mkstate "impl:idle" "critic:idle"
+
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u CF_EXTERNAL_LEAD -u HERDR_PANE_ID CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --check 2>&1)"
+RC=$?
+check "CF_EXTERNAL_LEAD 누락 시 rc 2" eq "$RC" 2
+check "CF_EXTERNAL_LEAD 누락 시 hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && CF_EXTERNAL_LEAD=1 HERDR_PANE_ID="wN:p1" CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --check 2>&1)"
+RC=$?
+check "HERDR_PANE_ID 존재 시 rc 1" eq "$RC" 1
+check "HERDR_PANE_ID 존재 시 hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+
+: >"${LOG}"
+OUT="$(cd "${TEST_REPO}" && env -u CLAUDE_CODE_SESSION_ID -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${CORE_SCRIPT}" --check 2>&1)"
+RC=$?
+check "CLAUDE_CODE_SESSION_ID 누락 시 rc 1" eq "$RC" 1
+
+: >"${LOG}"
+OUT="$(cd "${WT_LINKED}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+	HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+	"${TEST_BASH}" "${WT_LINKED}/scripts/team-core.sh" --check 2>&1)"
+RC=$?
+check "연결 worktree 차단 rc 1" eq "$RC" 1
+
+printf '%s\n' "${OTHER_SID}" >"${EXT_LOCK}"
+run_core --up
+check "다른 외부 팀장 세션 잠금 시 --up 거부 rc 1" eq "$RC" 1
+printf '%s\n' "${EXT_SID}" >"${EXT_LOCK}"
+
+# ===========================================================================
+# 2. team-core.sh --check
+# ===========================================================================
+CASE="team-core --check: 두 팀원 live·옵션 일치 · 대화 id 추출 · 불일치 · 없음"
+mkstate "impl:idle:${IMPL_CONV}" "critic:idle"
+run_core --check
+check "모두 정상 rc 0" eq "$RC" 0
+check "읽기 전용(변경 호출 없음)" no_hc_mutations
+check "cf-impl 요약 줄 + 대화 id 추출" line_matches "^cf-impl t26 ok 대화=${IMPL_CONV}\$"
+check "cf-critic 요약 줄" line_matches "^cf-critic t27 ok\$"
+
+# 옵션 불일치(cf-impl --model 값 다름, cf-critic --sandbox 등 누락)
+patch_term "cf-impl" '{"argv": ["agy", "--model", "wrong-model", "--mode", "accept-edits"]}'
+run_core --check
+check "옵션 불일치 시 rc 1" eq "$RC" 1
+check "옵션 불일치 안내 줄" has "옵션 불일치:"
+check "cf-impl mismatch 요약 줄" line_matches "^cf-impl t26 mismatch 실제=.* 기대=.*"
+
+# critic 없음
+mkstate "impl:idle"
+run_core --check
+check "critic 없음 시 rc 1" eq "$RC" 1
+check "critic unknown 없음 요약 줄" line_matches "^cf-critic - unknown 없음\$"
+
+# ===========================================================================
+# 3. team-core.sh --up
+# ===========================================================================
+CASE="team-core --up: 없는 석만 기동 · 대화 id 없을 때 경고 · 대화 id 있을 때 전달 · 살아 있는 같은 이름 hc run 거부"
+# (1) cf-impl은 살아 있고 cf-critic만 없을 때 → cf-critic만 기동
+mkstate "impl:idle:${IMPL_CONV}"
+run_core --up
+check "빠진 critic만 기동 rc 0" eq "$RC" 0
+check "살아 있는 cf-impl 그대로 둠" has "cf-impl: 살아 있음(t26); 그대로 둠"
+check "cf-critic 기동 완료(t28)" has "cf-critic: 기동 완료(t28)"
+check "hc run 1회만 호출됨" eq "$(grep -c '^run	' "${LOG}")" 1
+check "hc run이 cf-critic에만 호출됨" eq "$(grep -c '^run	.*--name	cf-critic	' "${LOG}")" 1
+
+# (2) 둘 다 없을 때 대화 id 없이 기동 → 경고 출력 후 새 대화로 기동
+mkstate
+run_core --up
+check "둘 다 기동 rc 0" eq "$RC" 0
+check "대화 id 없음 경고 출력" has "대화 id 없음 — 새 대화로 띄움"
+check "hc run 2회 호출됨" eq "$(grep -c '^run	' "${LOG}")" 2
+run_core --check
+check "기동 후 재점검 rc 0" eq "$RC" 0
+
+# (3) cf-impl 없을 때 대화 id 지정 기동 → 경고 없이 --conversation 전달
+mkstate "critic:idle"
+run_core --up "${IMPL_CONV}"
+check "대화 id 지정 기동 rc 0" eq "$RC" 0
+check "대화 id 없음 경고 미출력" not_has "대화 id 없음 — 새 대화로 띄움"
+check "--conversation 인자 전달됨" eq "$(grep -c "^run	.*--conversation	${IMPL_CONV}	" "${LOG}")" 1
+
+# (4) 살아 있는 같은 이름에 hc run 거부 경로(점검 직후 경합으로 이미 살아 있는 이름에 hc run 호출 시 거부)
+mkstate "impl:idle" "critic:idle"
+STATE_FILE="${STATE}" python3 -c '
+import json, os
+p = os.environ["STATE_FILE"]
+st = json.load(open(p, encoding="utf-8"))
+st["skip_get_once"] = ["cf-impl"]
+json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
+'
+run_core --up "${IMPL_CONV}"
+check "살아 있는 같은 이름 hc run 거부 시 rc 1" eq "$RC" 1
+check "hc 거부 원문 보고" has 'error: terminal "cf-impl" is already live'
+
+# ===========================================================================
+# 4. team-core.sh --status
+# ===========================================================================
+CASE="team-core --status: 마탑 가이드 §3 보고 꼴 출력 및 확인창 상태 표시"
+mkstate "impl:blocked:${IMPL_CONV}" "critic:idle"
+run_core --status "이주점검"
+check "--status rc 0" eq "$RC" 0
+check "읽기 전용" no_hc_mutations
+check "머리말 출력" has "[CF 팀장→마탑] 답: 팀 점검·구성(이주점검,"
+check "팀장 세션·잠금 mine 출력" has "팀장 모드 외부(Core), 잠금 mine"
+check "cf-impl 확인창 있음·blocked 표시" has "- 팀원: cf-impl t26 agy 옵션 일치 ○ 세션 id 기록 ○ 확인창 있음 상태 blocked"
+check "cf-critic 확인창 없음·idle 표시" has "- 팀원: cf-critic t27 codex 옵션 일치 ○ 세션 id 기록 × 확인창 없음 상태 idle"
+check "고정 꼬리말 출력" has "이 메시지는 승인이 아니다."
+
+# ===========================================================================
+# 5. team-core.sh --down
+# ===========================================================================
+CASE="team-core --down: working·blocked 거부 및 idle·done 시 kill→rm"
+mkstate "impl:working" "critic:blocked"
+run_core --down cf-impl
+check "working 상태 --down 거부 rc 1" eq "$RC" 1
+check "working 상태 kill·rm 호출 0" eq "$(grep -cE '^(kill|rm)	' "${LOG}")" 0
+
+run_core --down cf-critic
+check "blocked 상태 --down 거부 rc 1" eq "$RC" 1
+check "blocked 상태 kill·rm 호출 0" eq "$(grep -cE '^(kill|rm)	' "${LOG}")" 0
+
+mkstate "impl:done" "critic:idle"
+run_core --down cf-impl
+check "done 상태 --down rc 0" eq "$RC" 0
+check "kill 후 rm 순서 호출" eq "$(grep -E '^(kill|rm)	' "${LOG}" | tr '\n' ';')" "kill${T}cf-impl${T}--json;rm${T}cf-impl${T}--json;"
+
+run_core --down cf-critic
+check "idle 상태 --down rc 0" eq "$RC" 0
+check "kill 후 rm 호출" eq "$(grep -E '^(kill|rm)	' "${LOG}" | tr '\n' ';')" "kill${T}cf-critic${T}--json;rm${T}cf-critic${T}--json;"
+
+# ===========================================================================
+# 6. core-watch.sh --send
+# ===========================================================================
+CASE="core-watch --send: idle은 --if idle · done은 --if 없이 · blocked·working은 거부"
+mkstate "impl:idle" "critic:done"
+run_watch_cmd --send cf-impl "hello-impl"
+check "idle 전송 rc 0" eq "$RC" 0
+check "idle 전송 시 hc send --if idle 호출" eq "$(grep -c "^send${T}--if${T}idle${T}cf-impl${T}hello-impl\$" "${LOG}")" 1
+
+run_watch_cmd --send cf-critic "hello-critic"
+check "done 전송 rc 0(done != idle 처리)" eq "$RC" 0
+check "done 전송 시 --if 없이 hc send 호출" eq "$(grep -c "^send${T}cf-critic${T}hello-critic\$" "${LOG}")" 1
+
+mkstate "impl:blocked" "critic:working"
+run_watch_cmd --send cf-impl "never-send-1"
+check "blocked 전송 거부 rc 1" eq "$RC" 1
+check "blocked 거부 이벤트 출력" has "EVENT send-refused cf-impl status=blocked"
+check "blocked 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+
+run_watch_cmd --send cf-critic "never-send-2"
+check "working 전송 거부 rc 1" eq "$RC" 1
+check "working 거부 이벤트 출력" has "EVENT send-refused cf-critic status=working"
+check "working 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+
+# ===========================================================================
+# 7. core-watch.sh --approve-once
+# ===========================================================================
+CASE="core-watch --approve-once: --allow-file 바이트 정확 일치 1건 승인 · 공백/옵션/경로/접두어/결합옵션/여러줄/파일없음/msg누락/비blocked 거부"
+mkstate "impl:blocked" "critic:idle"
+ALLOW_FILE="${TMP}/allowed-cmds.txt"
+EMPTY_ALLOW_FILE="${TMP}/allowed-empty.txt"
+printf 'hc get cf-critic --json\n' >"${ALLOW_FILE}"
+: >"${EMPTY_ALLOW_FILE}"
+
+# (1) 정확 일치 승인 1건(--allow-file 줄과 status.msg 바이트 그대로 일치)
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "hc get cf-critic --json"}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "정확 일치 승인 rc 0" eq "$RC" 0
+check "정확 일치 APPROVED 출력" eq "$OUT" "APPROVED cf-impl enter"
+check "정확 일치 hc keys cf-impl enter --json 1회 호출" eq "$(grep -c "^keys${T}cf-impl${T}enter${T}--json\$" "${LOG}")" 1
+
+# (2) 허용 파일 없음·미지정·빈 파일 거부 (keys 호출 0회)
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "hc get cf-critic --json"}}'
+run_watch_cmd --approve-once cf-impl
+check "--allow-file 미지정 거부 rc 1" eq "$RC" 1
+check "--allow-file 미지정 allow-file-missing 출력" eq "$OUT" "EVENT blocked-unhandled cf-impl allow-file-missing"
+check "--allow-file 미지정 keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+run_watch_cmd --approve-once cf-impl --allow-file "${TMP}/no-such-file.txt"
+check "존재하지 않는 --allow-file 거부 rc 1" eq "$RC" 1
+check "존재하지 않는 --allow-file allow-file-missing 출력" eq "$OUT" "EVENT blocked-unhandled cf-impl allow-file-missing"
+check "존재하지 않는 --allow-file keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+run_watch_cmd --approve-once cf-impl --allow-file "${EMPTY_ALLOW_FILE}"
+check "빈 --allow-file 거부 rc 1" eq "$RC" 1
+check "빈 --allow-file allow-file-empty 출력" eq "$OUT" "EVENT blocked-unhandled cf-impl allow-file-empty"
+check "빈 --allow-file keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+# (3) 공백·옵션·경로·접두어·결합 옵션·쓰기 변형 거부 (모두 keys 호출 0회)
+for bad_cmd in \
+	" hc get cf-critic --json" \
+	"hc get cf-critic --json " \
+	"hc  get cf-critic --json" \
+	"hc get cf-critic" \
+	"hc get --json cf-critic" \
+	"/usr/local/bin/hc get cf-critic --json" \
+	"/tmp/unapproved/hc get cf-critic --json" \
+	"/tmp/unapproved/git status" \
+	"Run this command? hc get cf-critic --json" \
+	"env hc get cf-critic --json" \
+	"git hash-object -wt blob README.md" \
+	"git diff --ext-diff" \
+	"git log --ext-diff -p -1" \
+	"git add AGENTS.md" \
+	"git commit -F /tmp/cf-i30-c1/commit-msg.txt" \
+	"herdr pane send-keys other-team-pane down enter" \
+	"herdr agent rename wOther:p99 cf-critic" \
+	"herdr agent prompt cf-critic /new" \
+	"hc get cf-critic --json && rm -rf /tmp/x"; do
+	patch_term "cf-impl" "{\"status\": {\"state\": \"blocked\", \"msg\": \"${bad_cmd}\"}}"
+	run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+	check "변형 거부(${bad_cmd}) rc 1" eq "$RC" 1
+	check "변형 거부(${bad_cmd}) disallowed-command" eq "$OUT" "EVENT blocked-unhandled cf-impl disallowed-command"
+	check "변형 거부(${bad_cmd}) keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+done
+
+# (4) 여러 줄 변형(첫 줄 일치+둘째 줄 추가 / 머리말 줄바꿈 / 잘림 줄바꿈) 거부 (keys 호출 0회)
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "hc get cf-critic --json\ngit push --force origin main"}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "여러 줄 변형(첫 줄 일치+둘째 줄 추가) 거부 rc 1" eq "$RC" 1
+check "여러 줄 변형 disallowed-command 출력" eq "$OUT" "EVENT blocked-unhandled cf-impl disallowed-command"
+check "여러 줄 변형 keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "Run this command?\nhc get cf-critic --json"}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "여러 줄 변형(머리말 줄바꿈) 거부 rc 1" eq "$RC" 1
+check "여러 줄 변형(머리말 줄바꿈) keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "hc get cf-critic --json\n\u2026"}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "여러 줄 변형(잘림 줄바꿈) 거부 rc 1" eq "$RC" 1
+check "여러 줄 변형(잘림 줄바꿈) keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+# (5) status.msg 비어 있음(누락) → 거부 및 키 미전송
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": ""}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "status.msg 비어 있을 때 거부 rc 1" eq "$RC" 1
+check "blocked-unhandled msg-empty 출력" eq "$OUT" "EVENT blocked-unhandled cf-impl msg-empty"
+check "msg 비어 있을 때 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+# (6) blocked 아님(idle) → 거부 및 키 미전송
+patch_term "cf-impl" '{"status": {"state": "idle", "msg": "hc get cf-critic --json"}}'
+run_watch_cmd --approve-once cf-impl --allow-file "${ALLOW_FILE}"
+check "idle 상태 --approve-once 거부 rc 1" eq "$RC" 1
+check "blocked-unhandled not-blocked 출력" has "EVENT blocked-unhandled cf-impl not-blocked"
+check "idle 상태 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+# ===========================================================================
+# 8. core-watch.sh --critic-new
+# ===========================================================================
+CASE="core-watch --critic-new: done·idle 시작 분기 /new 전송 뒤 turn 증가 확인 및 turn 미증가 실패(rename 없음)"
+# (1) done 시작 분기
+mkstate "impl:idle" "critic:done"
+run_watch_cmd --critic-new
+check "--critic-new(done 시작) rc 0" eq "$RC" 0
+check "turn 1→2 및 status=idle 확인 출력" has "cf-critic: /new 완료 (turn 1→2, status=idle)"
+check "done 시작 시 --if 없이 hc send cf-critic /new 호출됨" eq "$(grep -c "^send${T}cf-critic${T}/new\$" "${LOG}")" 1
+check "rename 호출 없음" eq "$(grep -c 'rename' "${LOG}")" 0
+
+# (2) idle 시작 분기
+mkstate "impl:idle" "critic:idle"
+run_watch_cmd --critic-new
+check "--critic-new(idle 시작) rc 0" eq "$RC" 0
+check "idle 시작 시 hc send --if idle cf-critic /new 호출됨" eq "$(grep -c "^send${T}--if${T}idle${T}cf-critic${T}/new\$" "${LOG}")" 1
+
+# (3) turn 미증가 시 실패 분기
+mkstate "impl:idle" "critic:idle"
+STATE_FILE="${STATE}" python3 -c '
+import json, os
+p = os.environ["STATE_FILE"]
+st = json.load(open(p, encoding="utf-8"))
+st["no_turn_inc_on_new"] = True
+json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
+'
+run_watch_cmd --critic-new
+check "turn 미증가 시 --critic-new 실패 rc 1" eq "$RC" 1
+
+# (4) working 상태일 때 거부
+mkstate "impl:idle" "critic:working"
+run_watch_cmd --critic-new
+check "critic working 시 --critic-new 거부 rc 1" eq "$RC" 1
+check "critic working 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+
+# ===========================================================================
+# 9. core-watch.sh --watch
+# ===========================================================================
+CASE="core-watch --watch: to-lead 새 파일 감지 · blocked 시 여러 줄 status.msg 전체 출력 · error 감지 · --max 타임아웃"
+ROUND_DIR="${TMP}/cf-work/issues/30/r1"
+mkdir -p "${ROUND_DIR}/to-lead"
+printf 'ack\n' >"${ROUND_DIR}/to-lead/01-ACK.md"
+
+# (1) to-lead/ 새 REPORT 파일 감지(01-ACK.md는 무시하고 새로 생긴 02-REPORT.md 감지)
+mkstate "impl:working" "critic:idle"
+(
+	sleep 0.2
+	printf 'done\n' >"${ROUND_DIR}/to-lead/02-REPORT.md"
+) &
+BG_WRITER=$!
+run_watch_cmd --watch "${ROUND_DIR}" --max 5 --interval 1
+wait "${BG_WRITER}"
+check "to-lead 새 파일 감지 rc 0" eq "$RC" 0
+check "EVENT to-lead 경로 출력" eq "$OUT" "EVENT to-lead ${ROUND_DIR}/to-lead/02-REPORT.md"
+
+# (2) blocked 감지 시 여러 줄 status.msg 원문 전체를 잘리지 않고 출력
+mkstate "impl:blocked" "critic:idle"
+patch_term "cf-impl" '{"status": {"state": "blocked", "msg": "Run this command?\ngit commit -F /tmp/cf-i30-c1/commit-msg.txt"}}'
+run_watch_cmd --watch "${ROUND_DIR}" --max 5 --interval 1
+check "blocked 감지 rc 0" eq "$RC" 0
+check "EVENT blocked 및 여러 줄 status.msg 전체 출력" eq "$OUT" "$(printf 'EVENT blocked cf-impl\nRun this command?\ngit commit -F /tmp/cf-i30-c1/commit-msg.txt')"
+
+# (3) error 감지(status.state == error 또는 state != live)
+mkstate "impl:error" "critic:idle"
+run_watch_cmd --watch "${ROUND_DIR}" --max 5 --interval 1
+check "error 상태 감지 rc 0" eq "$RC" 0
+check "EVENT error 출력" eq "$OUT" "EVENT error cf-impl state=live status=error"
+
+mkstate "impl:idle" "critic:idle:exited"
+run_watch_cmd --watch "${ROUND_DIR}" --max 5 --interval 1
+check "exited 상태 감지 rc 0" eq "$RC" 0
+check "EVENT error state=exited 출력" eq "$OUT" "EVENT error cf-critic state=exited status=idle"
+
+# (4) --max 타임아웃
+mkstate "impl:working" "critic:idle"
+run_watch_cmd --watch "${ROUND_DIR}" --max 1 --interval 1
+check "--max 타임아웃 rc 0" eq "$RC" 0
+check "EVENT timeout 출력" eq "$OUT" "EVENT timeout"
+check "화면 읽기(hc read) 호출 0" eq "$(grep -c '^read	' "${LOG}")" 0
+
+# shellcheck disable=SC2016
+echo "team-core 테스트: 통과 ${PASS} / 전체 $((PASS + FAIL)) (bash: $("${TEST_BASH}" -c 'echo $BASH_VERSION'))"
+[ "${FAIL}" -eq 0 ]

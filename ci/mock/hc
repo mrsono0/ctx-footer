@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""ci/test-team-core.sh 전용 모의 hc. 실제 Herdr Core에 연결하지 않는다.
+
+상태: $MOCK_HC_STATE (JSON).
+기록: 모든 호출을 $MOCK_HC_LOG 에 한 줄(인자를 탭으로 연결)씩 남긴다.
+"""
+import json
+import os
+import sys
+
+STATE = os.environ.get("MOCK_HC_STATE")
+LOG = os.environ.get("MOCK_HC_LOG")
+if not STATE or not LOG:
+    sys.stderr.write("mock hc: MOCK_HC_STATE/MOCK_HC_LOG 미설정\n")
+    sys.exit(97)
+
+args = sys.argv[1:]
+with open(LOG, "a", encoding="utf-8") as f:
+    f.write("\t".join(args) + "\n")
+
+with open(STATE, encoding="utf-8") as f:
+    state = json.load(f)
+
+terminals = state.setdefault("terminals", [])
+
+
+def save():
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=1)
+
+
+def find_term(target):
+    for t in terminals:
+        if t.get("name") == target or t.get("address") == target:
+            return t
+    return None
+
+
+if not args:
+    sys.stderr.write("mock hc: 하위 명령 없음\n")
+    sys.exit(2)
+
+sub = args[0]
+rest = args[1:]
+
+if sub == "get":
+    pos = [a for a in rest if not a.startswith("-")]
+    if not pos:
+        sys.stderr.write("mock hc get: 대상 없음\n")
+        sys.exit(2)
+    target = pos[0]
+    skip_once = state.get("skip_get_once") or []
+    if target in skip_once:
+        skip_once.remove(target)
+        state["skip_get_once"] = skip_once
+        save()
+        sys.stderr.write(f"error: terminal not found: {target}\n")
+        sys.exit(1)
+    t = find_term(target)
+    if not t:
+        sys.stderr.write(f"error: terminal not found: {target}\n")
+        sys.exit(1)
+    print(json.dumps(t, ensure_ascii=False))
+    sys.exit(0)
+
+if sub in ("ls", "list"):
+    print(json.dumps(terminals, ensure_ascii=False))
+    sys.exit(0)
+
+if sub == "run":
+    if "--" in rest:
+        sep = rest.index("--")
+        opts = rest[:sep]
+        cmd_argv = rest[sep + 1 :]
+    else:
+        opts = rest
+        cmd_argv = []
+    name = None
+    cwd = os.getcwd()
+    labels = {}
+    i = 0
+    while i < len(opts):
+        o = opts[i]
+        if o == "--name" and i + 1 < len(opts):
+            name = opts[i + 1]
+            i += 2
+        elif o == "--cwd" and i + 1 < len(opts):
+            cwd = opts[i + 1]
+            i += 2
+        elif o == "--label" and i + 1 < len(opts):
+            kv = opts[i + 1]
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                labels[k] = v
+            i += 2
+        else:
+            i += 1
+    if not cmd_argv:
+        sys.stderr.write("mock hc run: 실행 명령 없음\n")
+        sys.exit(2)
+    if name:
+        existing = find_term(name)
+        if existing is not None:
+            if existing.get("state") == "live":
+                sys.stderr.write(f'error: terminal "{name}" is already live\n')
+                sys.exit(1)
+            terminals.remove(existing)
+    n = int(state.get("next", 26))
+    state["next"] = n + 1
+    addr = f"t{n}"
+    app = os.path.basename(cmd_argv[0])
+    new_t = {
+        "address": addr,
+        "argv": cmd_argv,
+        "created_at": 1776478400000 + n,
+        "cwd": cwd,
+        "exit_code": None,
+        "id": f"019da031-0000-7000-8000-{n:012d}",
+        "labels": labels,
+        "name": name,
+        "parent": None,
+        "pid": 14000 + n,
+        "pty": {"cols": 80, "rows": 24},
+        "state": "live",
+        "status": {"app": app, "msg": "", "state": "idle"},
+        "title": app,
+        "turn": 1,
+    }
+    terminals.append(new_t)
+    save()
+    print(json.dumps(new_t, ensure_ascii=False))
+    sys.exit(0)
+
+if sub == "send":
+    if_state = None
+    pos = []
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--if" and i + 1 < len(rest):
+            if_state = rest[i + 1]
+            i += 2
+        elif a in ("--no-enter", "--json"):
+            i += 1
+        else:
+            pos.append(a)
+            i += 1
+    if len(pos) < 2:
+        sys.stderr.write("mock hc send: 대상 또는 메시지 없음\n")
+        sys.exit(2)
+    target, text = pos[0], pos[1]
+    t = find_term(target)
+    if not t or t.get("state") != "live":
+        sys.stderr.write(f"error: terminal {target} is not live\n")
+        sys.exit(1)
+    cur_st = (t.get("status") or {}).get("state") or ""
+    if if_state is not None and cur_st != if_state:
+        addr = t.get("address") or target
+        sys.stderr.write(f"error: terminal {addr} state is {cur_st}, expected {if_state}\n")
+        sys.exit(1)
+    if text == "/new":
+        if not state.get("no_turn_inc_on_new"):
+            t["turn"] = int(t.get("turn") or 1) + 1
+        t.setdefault("status", {})["state"] = state.get("status_after_new", "idle")
+    save()
+    if "--json" in rest:
+        print(json.dumps({"ok": True}))
+    sys.exit(0)
+
+if sub == "keys":
+    pos = [a for a in rest if not a.startswith("-")]
+    if len(pos) < 2:
+        sys.stderr.write("mock hc keys: 대상 또는 키 없음\n")
+        sys.exit(2)
+    target = pos[0]
+    keys = pos[1:]
+    t = find_term(target)
+    if not t or t.get("state") != "live":
+        sys.stderr.write(f"error: terminal {target} is not live\n")
+        sys.exit(1)
+    if target in (state.get("fail_keys") or []):
+        sys.stderr.write("error: keys failed\n")
+        sys.exit(1)
+    if "enter" in keys and (t.get("status") or {}).get("state") == "blocked":
+        t["status"]["state"] = "working"
+        t["status"]["msg"] = ""
+    save()
+    if "--json" in rest:
+        print(json.dumps({"ok": True}))
+    sys.exit(0)
+
+if sub == "kill":
+    pos = [a for a in rest if not a.startswith("-")]
+    if not pos:
+        sys.stderr.write("mock hc kill: 대상 없음\n")
+        sys.exit(2)
+    target = pos[0]
+    t = find_term(target)
+    if not t:
+        sys.stderr.write(f"error: terminal not found: {target}\n")
+        sys.exit(1)
+    t["state"] = "exited"
+    t["exit_code"] = 0
+    t["pid"] = None
+    save()
+    if "--json" in rest:
+        print(json.dumps({"ok": True}))
+    sys.exit(0)
+
+if sub == "rm":
+    pos = [a for a in rest if not a.startswith("-")]
+    if not pos:
+        sys.stderr.write("mock hc rm: 대상 없음\n")
+        sys.exit(2)
+    target = pos[0]
+    t = find_term(target)
+    if not t:
+        sys.stderr.write(f"error: terminal not found: {target}\n")
+        sys.exit(1)
+    if t.get("state") == "live" and "--force" not in rest:
+        sys.stderr.write(f"error: terminal {target} is still live; kill first\n")
+        sys.exit(1)
+    terminals.remove(t)
+    save()
+    if "--json" in rest:
+        print(json.dumps({"ok": True}))
+    sys.exit(0)
+
+sys.stderr.write(f"mock hc: 지원하지 않는 하위 명령: {sub}\n")
+sys.exit(2)
