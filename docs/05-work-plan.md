@@ -72,6 +72,7 @@
 - #31(2026-11-10, 규칙): Core 이주 M4 — 팀장 자리를 공용 herdr-core 터미널 `cf-lead`(탑주가 띄움, auto)로 바꾸고, 잠금 인수 순서(데스크톱 → Core)·Core 팀원 기동/점검·전달·확인창(상태 API)·되돌리기를 `.claude/rules/lead-operations.md`·`docs/08`·`docs/04`·`AGENTS.md`에 적음. 공통 정본 P22 이름·라벨 규칙 한 줄. 스크립트는 M3(#30). 이 줄과 같은 커밋.
 - #30(2026-11-10, 팀 환경·이주 준비 M3, 로드맵 #27): 기존 Herdr 스크립트를 바꾸지 않는 A′안으로 Herdr Core(`hc`, `HC_BIN` 재정의 가능, 원격 Core 가정: 소켓·`HC_*`·화면 `hc read`·`ps` 미사용) 전용 `scripts/team-core.sh`(`--check`·`--up [<대화 id>]`·`--status`·`--down`)와 `scripts/core-watch.sh`(`--watch`·`--approve-once`·`--send`·`--critic-new`), 모의 `ci/mock/hc`·`ci/test-team-core.sh`를 추가하고 `docs/04` §5 표 끝에 Core 명령 줄을 덧붙임(실제 Core 시험 터미널 기동 범위 3은 별도 재확인 전 미실행). 이 줄과 같은 커밋.
 - #32(2026-11-11, 팀 환경·이주 준비, 로드맵 #27): 공통 정본 v4.9 P22 App 공간 라벨 권고 채택(사용자 결정 2026-11-11)에 맞춰 `scripts/team-core.sh --up`이 `CF_HERDR_SPACE`가 비어 있지 않을 때만 `--label herdr.space=$CF_HERDR_SPACE`를 덧붙이고 `--check` 표에 `herdr.space` 유무 칸을 표시하되 옵션 불일치 판정에는 넣지 않으며(`herdr.tab` 미부착), `ci/test-team-core.sh`·`docs/04` 표 `--up` 행을 갱신. 이 줄과 같은 커밋.
+- #33(2026-11-11, 팀 환경·이주 준비, 로드맵 #27): M3 범위 3 실측(#30 코멘트)에 맞춰 `scripts/core-watch.sh --critic-new`가 `/new` 전송 뒤 짧게 기다려 `hc get`했을 때 `status.state == "idle"`이고 `turn`이 늘지 않았으면(Codex worktree 선택창) `hc keys cf-critic enter`를 1회 보내고 다시 `hc get`으로 `turn` 증가를 확인하도록 보정(이미 `turn`이 늘었으면 `enter` 미전송, `blocked`·`working`·사라짐·`turn` 미증가 지속은 비0 실패). `ci/test-team-core.sh` 세 사례·`docs/04` 표 `--critic-new` 행 갱신. 이 줄과 같은 커밋.
 
 ## P0–P2 완료 기록
 - P0(2026-10-11): 문서 01–05·LICENSE·NOTICE·third_party — 커밋 `b911a17`.

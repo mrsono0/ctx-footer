@@ -320,7 +320,7 @@ run_send() {
 }
 
 run_critic_new() {
-	local info t_state s_state before_turn after_turn tries=0
+	local info t_state s_state before_turn after_turn tries=0 sent_enter=0
 	info="$(query_member cf-critic)"
 	IFS=$'\x1f' read -r t_state s_state before_turn <<<"$info"
 	if [ "$t_state" != "live" ]; then
@@ -338,17 +338,29 @@ run_critic_new() {
 		;;
 	esac
 
+	sleep "$RETRY_SLEEP"
 	while [ "$tries" -lt "$RETRIES" ]; do
 		info="$(query_member cf-critic)"
 		IFS=$'\x1f' read -r t_state s_state after_turn <<<"$info"
-		if [ "$t_state" = "live" ] && [ "$s_state" = "idle" ] && [ "${after_turn:-0}" -gt "${before_turn:-0}" ] 2>/dev/null; then
-			printf 'cf-critic: /new 완료 (turn %s→%s, status=idle)\n' "$before_turn" "$after_turn"
-			exit 0
+		if [ "$t_state" != "live" ] || [ "$s_state" = "blocked" ] || [ "$s_state" = "error" ]; then
+			break
+		fi
+		if [ "$s_state" = "idle" ]; then
+			if [ "${after_turn:-0}" -gt "${before_turn:-0}" ] 2>/dev/null; then
+				printf 'cf-critic: /new 완료 (turn %s→%s, status=idle)\n' "$before_turn" "$after_turn"
+				exit 0
+			fi
+			if [ "$sent_enter" -eq 0 ] && [ "${after_turn:-0}" -eq "${before_turn:-0}" ] 2>/dev/null; then
+				"$HC_BIN" keys cf-critic enter >/dev/null || die "cf-critic: 선택창 enter 전송 실패"
+				sent_enter=1
+				sleep "$RETRY_SLEEP"
+				continue
+			fi
 		fi
 		tries=$((tries + 1))
 		[ "$tries" -ge "$RETRIES" ] || sleep "$RETRY_SLEEP"
 	done
-	die "cf-critic: /new 뒤 idle 및 turn 증가 확인 실패(before=$before_turn, after=${after_turn:-?}, status=${s_state:-?})"
+	die "cf-critic: /new 뒤 idle 및 turn 증가 확인 실패(state=${t_state:-?}, before=$before_turn, after=${after_turn:-?}, status=${s_state:-?})"
 }
 
 case "$mode" in
