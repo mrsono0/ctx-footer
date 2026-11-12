@@ -743,68 +743,94 @@ check "idle 상태 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
 # ===========================================================================
 # 8. core-watch.sh --critic-new
 # ===========================================================================
-CASE="core-watch --critic-new: ⒜ 선택창 있음(idle·turn 불변→enter 1회→turn+1) · ⒝ 선택창 없음(turn 즉시 증가→enter 0회) · ⒞ turn 미증가 지속(enter 1회 뒤 실패) · ⒟ 비idle(keys 0회)"
-# ⒜ 선택창 있음: /new 뒤 status.state=="idle"·turn 불변 → hc keys cf-critic enter 1회 → turn+1 → 성공
-mkstate "impl:idle" "critic:idle"
-STATE_FILE="${STATE}" python3 -c '
-import json, os
-p = os.environ["STATE_FILE"]
-st = json.load(open(p, encoding="utf-8"))
-st["no_turn_inc_on_new"] = True
-json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
-'
+CASE="core-watch --critic-new: ⒜ keys(/ n e w → enter, send 0회) · ⒝ 선택창 있음/없음/turn 미증가 지속 · ⒞ blocked·working·사라짐(keys 0회)"
 MOCK_HC_ENTER="${TMP}/bin/hc-critic-enter"
 cat >"${MOCK_HC_ENTER}" <<EOF
 #!/usr/bin/env bash
 "${MOCK_HC}" "\$@"
 rc=\$?
-if [ "\$rc" -eq 0 ] && [ "\${1:-}" = "keys" ] && [ "\${2:-}" = "cf-critic" ] && [ "\${3:-}" = "enter" ]; then
-	python3 -c '
-import json, os
+if [ "\$rc" -eq 0 ] && [ "\${1:-}" = "keys" ] && [ "\${2:-}" = "cf-critic" ]; then
+	python3 - "\$@" <<'PY'
+import json, os, sys
 p = os.environ["MOCK_HC_STATE"]
+args = sys.argv[1:]
 with open(p, encoding="utf-8") as f:
     st = json.load(f)
-for t in st.get("terminals", []):
-    if t.get("name") == "cf-critic":
-        t["turn"] = int(t.get("turn") or 1) + 1
+if args == ["keys", "cf-critic", "/", "n", "e", "w"]:
+    st["typed_slash_new"] = True
+elif args == ["keys", "cf-critic", "enter"] and st.get("typed_slash_new"):
+    cnt = int(st.get("critic_enter_count") or 0) + 1
+    st["critic_enter_count"] = cnt
+    for t in st.get("terminals", []):
+        if t.get("name") == "cf-critic":
+            if cnt == 1:
+                t.setdefault("status", {})["state"] = st.get("status_after_new", "idle")
+                if not st.get("no_turn_inc_on_new"):
+                    t["turn"] = int(t.get("turn") or 1) + 1
+            elif cnt == 2 and st.get("inc_on_second_enter"):
+                t["turn"] = int(t.get("turn") or 1) + 1
 with open(p, "w", encoding="utf-8") as f:
     json.dump(st, f, ensure_ascii=False, indent=1)
-'
+PY
 fi
 exit "\$rc"
 EOF
 chmod +x "${MOCK_HC_ENTER}"
-: >"${LOG}"
-OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
-	HC_BIN="${MOCK_HC_ENTER}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
-	CF_RETRIES=5 CF_RETRY_SLEEP=0.05 \
-	"${TEST_BASH}" "${WATCH_SCRIPT}" --critic-new 2>&1)"
-RC=$?
-check "⒜ 선택창 있음(idle·turn 불변→enter 1회→turn+1) rc 0" eq "$RC" 0
-check "⒜ turn 1→2 및 status=idle 확인 출력" has "cf-critic: /new 완료 (turn 1→2, status=idle)"
-check "⒜ idle 시작 시 hc send --if idle cf-critic /new 1회 호출" eq "$(grep -c "^send${T}--if${T}idle${T}cf-critic${T}/new\$" "${LOG}")" 1
-check "⒜ 선택창에 hc keys cf-critic enter 정확히 1회 호출" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 1
-check "⒜ 전체 keys 호출 횟수 1회" eq "$(grep -c '^keys	' "${LOG}")" 1
-check "⒜ rename 호출 없음" eq "$(grep -c 'rename' "${LOG}")" 0
-check "⒜ 화면 읽기(hc read) 호출 0" eq "$(grep -c '^read	' "${LOG}")" 0
 
-# ⒝ 선택창 없음(1): done 시작 분기 (/new 뒤 turn 즉시 증가 → enter 0회 → 성공)
+run_critic_new_test() {
+	: >"${LOG}"
+	OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
+		HC_BIN="${MOCK_HC_ENTER}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
+		CF_RETRIES=5 CF_RETRY_SLEEP=0.05 \
+		"${TEST_BASH}" "${WATCH_SCRIPT}" --critic-new 2>&1)"
+	RC=$?
+}
+
+# ⒜·⒝(1) 선택창 있음: /new 키 입력(/ n e w → enter) 뒤 status.state=="idle"·turn 불변 → 선택창 enter 1회 → turn+1 → 성공 (send 0회)
+mkstate "impl:idle" "critic:idle"
+STATE_FILE="${STATE}" python3 -c '
+import json, os
+p = os.environ["STATE_FILE"]
+st = json.load(open(p, encoding="utf-8"))
+st["no_turn_inc_on_new"] = True
+st["inc_on_second_enter"] = True
+json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
+'
+run_critic_new_test
+check "⒜·⒝ 선택창 있음(idle·turn 불변→선택창 enter 1회→turn+1) rc 0" eq "$RC" 0
+check "⒜·⒝ turn 1→2 및 status=idle 확인 출력" has "cf-critic: /new 완료 (turn 1→2, status=idle)"
+check "⒜ hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒜ hc keys cf-critic / n e w 1회 호출" eq "$(grep -c "^keys${T}cf-critic${T}/${T}n${T}e${T}w\$" "${LOG}")" 1
+check "⒜·⒝ hc keys cf-critic enter 정확히 2회(/new 제출 1회 + 선택창 1회)" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 2
+check "⒜·⒝ keys 호출 순서(/ n e w → enter → enter)" eq "$(grep '^keys	' "${LOG}" | tr '\n' ';')" "keys${T}cf-critic${T}/${T}n${T}e${T}w;keys${T}cf-critic${T}enter;keys${T}cf-critic${T}enter;"
+check "⒜·⒝ 전체 keys 호출 횟수 3회" eq "$(grep -c '^keys	' "${LOG}")" 3
+check "⒜·⒝ rename 호출 없음" eq "$(grep -c 'rename' "${LOG}")" 0
+check "⒜·⒝ 화면 읽기(hc read) 호출 0" eq "$(grep -c '^read	' "${LOG}")" 0
+
+# ⒝(2-1) 선택창 없음(done 시작): /new 키 입력(/ n e w → enter) 뒤 turn 즉시 증가 → 추가 enter 0회 → 성공 (send 0회)
 mkstate "impl:idle" "critic:done"
-run_watch_cmd --critic-new
+run_critic_new_test
 check "⒝ 선택창 없음(done 시작) rc 0" eq "$RC" 0
 check "⒝(done 시작) turn 1→2 및 status=idle 확인 출력" has "cf-critic: /new 완료 (turn 1→2, status=idle)"
-check "⒝(done 시작) --if 없이 hc send cf-critic /new 호출됨" eq "$(grep -c "^send${T}cf-critic${T}/new\$" "${LOG}")" 1
-check "⒝(done 시작) turn 즉시 증가 시 keys 호출 0회" eq "$(grep -c '^keys	' "${LOG}")" 0
+check "⒝(done 시작) hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒝(done 시작) hc keys cf-critic / n e w 1회 호출" eq "$(grep -c "^keys${T}cf-critic${T}/${T}n${T}e${T}w\$" "${LOG}")" 1
+check "⒝(done 시작) turn 즉시 증가 시 enter 1회(/new 제출만, 선택창 추가 enter 0회)" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 1
+check "⒝(done 시작) keys 호출 순서(/ n e w → enter)" eq "$(grep '^keys	' "${LOG}" | tr '\n' ';')" "keys${T}cf-critic${T}/${T}n${T}e${T}w;keys${T}cf-critic${T}enter;"
+check "⒝(done 시작) 전체 keys 호출 횟수 2회" eq "$(grep -c '^keys	' "${LOG}")" 2
 check "⒝(done 시작) rename 호출 없음" eq "$(grep -c 'rename' "${LOG}")" 0
 
-# ⒝ 선택창 없음(2): idle 시작 분기 (/new 뒤 turn 즉시 증가 → enter 0회 → 성공)
+# ⒝(2-2) 선택창 없음(idle 시작): /new 키 입력(/ n e w → enter) 뒤 turn 즉시 증가 → 추가 enter 0회 → 성공 (send 0회)
 mkstate "impl:idle" "critic:idle"
-run_watch_cmd --critic-new
+run_critic_new_test
 check "⒝ 선택창 없음(idle 시작) rc 0" eq "$RC" 0
-check "⒝(idle 시작) hc send --if idle cf-critic /new 호출됨" eq "$(grep -c "^send${T}--if${T}idle${T}cf-critic${T}/new\$" "${LOG}")" 1
-check "⒝(idle 시작) turn 즉시 증가 시 keys 호출 0회" eq "$(grep -c '^keys	' "${LOG}")" 0
+check "⒝(idle 시작) turn 1→2 및 status=idle 확인 출력" has "cf-critic: /new 완료 (turn 1→2, status=idle)"
+check "⒝(idle 시작) hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒝(idle 시작) hc keys cf-critic / n e w 1회 호출" eq "$(grep -c "^keys${T}cf-critic${T}/${T}n${T}e${T}w\$" "${LOG}")" 1
+check "⒝(idle 시작) turn 즉시 증가 시 enter 1회(/new 제출만, 선택창 추가 enter 0회)" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 1
+check "⒝(idle 시작) keys 호출 순서(/ n e w → enter)" eq "$(grep '^keys	' "${LOG}" | tr '\n' ';')" "keys${T}cf-critic${T}/${T}n${T}e${T}w;keys${T}cf-critic${T}enter;"
+check "⒝(idle 시작) 전체 keys 호출 횟수 2회" eq "$(grep -c '^keys	' "${LOG}")" 2
 
-# ⒞ turn 미증가 지속: /new 뒤 idle·turn 불변 → enter 1회 전송 뒤에도 turn 불변 지속 → 실패(rc 1) 및 keys 총 1회만 호출
+# ⒝(3) turn 미증가 지속: /new 뒤 idle·turn 불변 → 선택창 enter 1회 전송 뒤에도 turn 불변 지속 → 실패(rc 1), send 0회, keys 총 3회(반복 전송 없음)
 mkstate "impl:idle" "critic:idle"
 STATE_FILE="${STATE}" python3 -c '
 import json, os
@@ -813,17 +839,37 @@ st = json.load(open(p, encoding="utf-8"))
 st["no_turn_inc_on_new"] = True
 json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
 '
-run_watch_cmd --critic-new
-check "⒞ turn 미증가 지속 시 --critic-new 실패 rc 1" eq "$RC" 1
-check "⒞ turn 미증가 지속 시에도 hc keys cf-critic enter는 1회만 호출" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 1
-check "⒞ 전체 keys 호출 횟수 1회(반복 전송 없음)" eq "$(grep -c '^keys	' "${LOG}")" 1
+run_critic_new_test
+check "⒝(turn 미증가 지속) --critic-new 실패 rc 1" eq "$RC" 1
+check "⒝(turn 미증가 지속) hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒝(turn 미증가 지속) hc keys cf-critic / n e w 1회 호출" eq "$(grep -c "^keys${T}cf-critic${T}/${T}n${T}e${T}w\$" "${LOG}")" 1
+check "⒝(turn 미증가 지속) hc keys cf-critic enter는 2회(/new 제출 1회 + 선택창 1회)만 호출" eq "$(grep -c "^keys${T}cf-critic${T}enter\$" "${LOG}")" 2
+check "⒝(turn 미증가 지속) 전체 keys 호출 횟수 3회(반복 전송 없음)" eq "$(grep -c '^keys	' "${LOG}")" 3
 
-# ⒟ 비idle 상태 검증: 시작이 working이거나 /new 뒤 blocked·working이면 keys 호출 0회 및 실패(rc 1)
+# ⒞ blocked·working·사라짐(missing/exited) 시작 시 키 0회 및 실패(rc 1), /new 뒤 blocked·working 시 추가 enter 0회 및 실패(rc 1)
+mkstate "impl:idle" "critic:blocked"
+run_critic_new_test
+check "⒞ critic blocked 시작 시 --critic-new 거부 rc 1" eq "$RC" 1
+check "⒞ critic blocked 시작 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ critic blocked 시작 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
 mkstate "impl:idle" "critic:working"
-run_watch_cmd --critic-new
-check "⒟ critic working 시작 시 --critic-new 거부 rc 1" eq "$RC" 1
-check "⒟ critic working 시작 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
-check "⒟ critic working 시작 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+run_critic_new_test
+check "⒞ critic working 시작 시 --critic-new 거부 rc 1" eq "$RC" 1
+check "⒞ critic working 시작 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ critic working 시작 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+mkstate "impl:idle"
+run_critic_new_test
+check "⒞ critic 사라짐(missing) 시 --critic-new 거부 rc 1" eq "$RC" 1
+check "⒞ critic 사라짐(missing) 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ critic 사라짐(missing) 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
+
+mkstate "impl:idle" "critic:idle:exited"
+run_critic_new_test
+check "⒞ critic 종료됨(exited) 시 --critic-new 거부 rc 1" eq "$RC" 1
+check "⒞ critic 종료됨(exited) 시 hc send 호출 0" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ critic 종료됨(exited) 시 hc keys 호출 0" eq "$(grep -c '^keys	' "${LOG}")" 0
 
 mkstate "impl:idle" "critic:idle"
 STATE_FILE="${STATE}" python3 -c '
@@ -834,9 +880,10 @@ st["no_turn_inc_on_new"] = True
 st["status_after_new"] = "blocked"
 json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
 '
-run_watch_cmd --critic-new
-check "⒟ /new 뒤 blocked 상태일 때 실패 rc 1" eq "$RC" 1
-check "⒟ /new 뒤 blocked 상태일 때 keys 호출 0회" eq "$(grep -c '^keys	' "${LOG}")" 0
+run_critic_new_test
+check "⒞ /new 뒤 blocked 상태일 때 실패 rc 1" eq "$RC" 1
+check "⒞ /new 뒤 blocked 상태일 때 hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ /new 뒤 blocked 상태일 때 선택창 추가 enter 미전송(keys 총 2회)" eq "$(grep -c '^keys	' "${LOG}")" 2
 
 mkstate "impl:idle" "critic:idle"
 STATE_FILE="${STATE}" python3 -c '
@@ -847,9 +894,10 @@ st["no_turn_inc_on_new"] = True
 st["status_after_new"] = "working"
 json.dump(st, open(p, "w", encoding="utf-8"), indent=1)
 '
-run_watch_cmd --critic-new
-check "⒟ /new 뒤 working 지속일 때 실패 rc 1" eq "$RC" 1
-check "⒟ /new 뒤 working 지속일 때 keys 호출 0회" eq "$(grep -c '^keys	' "${LOG}")" 0
+run_critic_new_test
+check "⒞ /new 뒤 working 지속일 때 실패 rc 1" eq "$RC" 1
+check "⒞ /new 뒤 working 지속일 때 hc send 호출 0회" eq "$(grep -c '^send	' "${LOG}")" 0
+check "⒞ /new 뒤 working 지속일 때 선택창 추가 enter 미전송(keys 총 2회)" eq "$(grep -c '^keys	' "${LOG}")" 2
 
 # ===========================================================================
 # 9. core-watch.sh --watch

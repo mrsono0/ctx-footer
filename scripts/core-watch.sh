@@ -327,11 +327,9 @@ run_critic_new() {
 		die "cf-critic: 살아 있지 않다(state=$t_state); /new를 보내지 않음"
 	fi
 	case "$s_state" in
-	idle)
-		"$HC_BIN" send --if idle cf-critic "/new" >/dev/null || die "cf-critic: /new 전송 실패"
-		;;
-	done)
-		"$HC_BIN" send cf-critic "/new" >/dev/null || die "cf-critic: /new 전송 실패"
+	idle | done)
+		"$HC_BIN" keys cf-critic / n e w >/dev/null || die "cf-critic: /new 키 전송 실패"
+		"$HC_BIN" keys cf-critic enter >/dev/null || die "cf-critic: /new enter 전송 실패"
 		;;
 	*)
 		die "cf-critic: 현재 상태가 '$s_state'이다(idle·done일 때만 /new 가능); 보내지 않음"
