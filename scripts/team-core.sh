@@ -107,10 +107,174 @@ git_common_dir="$(cd "$ROOT" && d="$(HOME=/dev/null XDG_CONFIG_HOME=/dev/null GI
 command -v "$HC_BIN" >/dev/null 2>&1 || die "hc 명령($HC_BIN)이 없다"
 command -v python3 >/dev/null 2>&1 || die "python3 명령이 없다"
 
+TAB=$'\t'
+EXT_LEAD_LOCK_DIR="$ROOT/.local/team/external-lead.lock"
+EXT_LEAD_LOCK_HELD=0
+
+acquire_ext_lead_lock() {
+	local tries=0
+	mkdir -p "$ROOT/.local/team" || die ".local/team 디렉터리를 만들지 못했다"
+	while ! mkdir "$EXT_LEAD_LOCK_DIR" 2>/dev/null; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 100 ] || die "외부 팀장 기록 잠금($EXT_LEAD_LOCK_DIR) 대기 시간 초과"
+		sleep 0.05
+	done
+	EXT_LEAD_LOCK_HELD=1
+	trap 'release_ext_lead_lock' EXIT
+	trap 'release_ext_lead_lock; exit 129' HUP
+	trap 'release_ext_lead_lock; exit 130' INT
+	trap 'release_ext_lead_lock; exit 143' TERM
+}
+
+release_ext_lead_lock() {
+	if [ "${EXT_LEAD_LOCK_HELD:-0}" = 1 ]; then
+		rm -f "$EXT_LEAD_FILE.tmp.$$" 2>/dev/null || true
+		rmdir "$EXT_LEAD_LOCK_DIR" 2>/dev/null || true
+		EXT_LEAD_LOCK_HELD=0
+		trap - EXIT HUP INT TERM
+	fi
+}
+
+trim_ws() {
+	local s="$1"
+	s="${s#"${s%%[![:space:]]*}"}"
+	s="${s%"${s##*[![:space:]]}"}"
+	printf '%s' "$s"
+}
+
+valid_lstart() {
+	local dow mon dom hms yr extra hh mm ss max_d
+	case "$1" in '' | *[!A-Za-z0-9:\ ]*) return 1 ;; esac
+	IFS=' ' read -r dow mon dom hms yr extra <<<"$1" || return 1
+	[ -z "$extra" ] || return 1
+	case "$dow" in Sun | Mon | Tue | Wed | Thu | Fri | Sat) ;; *) return 1 ;; esac
+	case "$yr" in [1-9][0-9][0-9][0-9]) ;; *) return 1 ;; esac
+	case "$mon" in
+	Jan | Mar | May | Jul | Aug | Oct | Dec) max_d=31 ;;
+	Apr | Jun | Sep | Nov) max_d=30 ;;
+	Feb)
+		if [ $((yr % 4)) = 0 ] && { [ $((yr % 100)) != 0 ] || [ $((yr % 400)) = 0 ]; }; then
+			max_d=29
+		else
+			max_d=28
+		fi
+		;;
+	*) return 1 ;;
+	esac
+	case "$dom" in
+	[1-9])
+		[ "$1" = "$dow $mon $dom $hms $yr" ] || [ "$1" = "$dow $mon  $dom $hms $yr" ] || return 1
+		;;
+	[12][0-9] | 3[01])
+		[ "$1" = "$dow $mon $dom $hms $yr" ] || return 1
+		;;
+	*) return 1 ;;
+	esac
+	[ "$((10#$dom))" -ge 1 ] && [ "$((10#$dom))" -le "$max_d" ] || return 1
+	case "$hms" in [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) ;; *) return 1 ;; esac
+	IFS=':' read -r hh mm ss <<<"$hms"
+	[ "$((10#$hh))" -le 23 ] && [ "$((10#$mm))" -le 59 ] && [ "$((10#$ss))" -le 59 ] || return 1
+	return 0
+}
+
+ext_lead_self_info() {
+	local pid="$$" hops=0 line ppid comm base lstart
+	while [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 32 ]; do
+		hops=$((hops + 1))
+		line="$(LC_ALL=C ps -o ppid=,comm= -p "$pid" 2>/dev/null)" || return 1
+		case "$line" in *$'\n'*) return 1 ;; esac
+		line="$(trim_ws "$line")"
+		[ -n "$line" ] || return 1
+		ppid="${line%%[[:space:]]*}"
+		case "$ppid" in '' | *[!0-9]*) return 1 ;; esac
+		comm="$(trim_ws "${line#"$ppid"}")"
+		[ -n "$comm" ] || return 1
+		base="${comm##*/}"
+		if [ "$base" = "claude" ]; then
+			lstart="$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
+			case "$lstart" in *$'\n'* | *"$TAB"*) return 1 ;; esac
+			lstart="$(trim_ws "$lstart")"
+			valid_lstart "$lstart" || return 1
+			printf '%s\t%s' "$pid" "$lstart"
+			return 0
+		fi
+		[ "$ppid" != "$pid" ] || return 1
+		pid="$ppid"
+	done
+	return 1
+}
+
 read_ext_lead_id() {
 	local id=""
 	[ -f "$EXT_LEAD_FILE" ] && IFS= read -r id <"$EXT_LEAD_FILE" || true
 	printf '%s' "$id"
+}
+
+read_ext_lead_line2() {
+	local id="" line2="" extra="" pid lstart
+	[ -f "$EXT_LEAD_FILE" ] || return 1
+	{
+		IFS= read -r id || [ -n "$id" ] || return 1
+		IFS= read -r line2 || [ -n "$line2" ] || return 1
+		if IFS= read -r extra || [ -n "$extra" ]; then
+			return 1
+		fi
+	} <"$EXT_LEAD_FILE"
+	case "$line2" in
+	*"$TAB"*) ;;
+	*) return 1 ;;
+	esac
+	pid="${line2%%"$TAB"*}"
+	lstart="${line2#*"$TAB"}"
+	case "$pid" in '' | 0* | *[!0-9]*) return 1 ;; esac
+	case "$lstart" in *"$TAB"*) return 1 ;; esac
+	lstart="$(trim_ws "$lstart")"
+	valid_lstart "$lstart" || return 1
+	printf '%s\t%s' "$pid" "$lstart"
+}
+
+classify_ext_lead_owner() {
+	local self_info self_pid self_lstart line2 rec_pid rec_lstart out rc cur_lstart
+	self_info="$(ext_lead_self_info)" || { printf 'unverifiable'; return 0; }
+	self_pid="${self_info%%"$TAB"*}"
+	self_lstart="${self_info#*"$TAB"}"
+	line2="$(read_ext_lead_line2)" || { printf 'unverifiable'; return 0; }
+	rec_pid="${line2%%"$TAB"*}"
+	rec_lstart="${line2#*"$TAB"}"
+	out="$(LC_ALL=C ps -o lstart= -p "$rec_pid" 2>&1)"
+	rc=$?
+	if [ "$rc" = 0 ]; then
+		case "$out" in *$'\n'*) printf 'unverifiable'; return 0 ;; esac
+		cur_lstart="$(trim_ws "$out")"
+		if ! valid_lstart "$cur_lstart"; then
+			printf 'unverifiable'
+		elif [ "$cur_lstart" = "$rec_lstart" ]; then
+			if [ "$rec_pid" = "$self_pid" ] && [ "$rec_lstart" = "$self_lstart" ]; then
+				printf 'self'
+			else
+				printf 'alive'
+			fi
+		else
+			printf 'gone'
+		fi
+		return 0
+	fi
+	if [ "$rc" = 1 ] && [ -z "$out" ]; then
+		printf 'gone'
+		return 0
+	fi
+	printf 'unverifiable'
+}
+
+write_ext_lead_record() { # self_info
+	if ! {
+		printf '%s\n%s\n' "$CLAUDE_CODE_SESSION_ID" "$1" >|"$EXT_LEAD_FILE.tmp.$$" &&
+			mv -f "$EXT_LEAD_FILE.tmp.$$" "$EXT_LEAD_FILE"
+	}; then
+		rm -f "$EXT_LEAD_FILE.tmp.$$" 2>/dev/null || true
+		release_ext_lead_lock
+		die "외부 팀장 기록($EXT_LEAD_FILE)을 쓰지 못했다"
+	fi
 }
 
 ext_lock_state() {
@@ -120,17 +284,39 @@ ext_lock_state() {
 	[ -n "$rec_id" ] || { printf 'unknown'; return 0; }
 	if [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ]; then
 		printf 'mine'
-	else
-		printf 'other live'
+		return 0
 	fi
+	case "$(classify_ext_lead_owner)" in
+	alive | self) printf 'other live' ;;
+	gone) printf 'stale' ;;
+	*) printf 'unknown' ;;
+	esac
 }
 
 check_ext_lead_owner_for_mutation() {
-	local rec_id
+	local rec_id self_info
 	rec_id="$(read_ext_lead_id)"
-	if [ -n "$rec_id" ] && [ "$rec_id" != "$CLAUDE_CODE_SESSION_ID" ]; then
-		die "다른 세션(${rec_id:0:8}…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
+	if [ -z "$rec_id" ] || [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ]; then
+		return 0
 	fi
+	acquire_ext_lead_lock
+	rec_id="$(read_ext_lead_id)"
+	if [ -z "$rec_id" ] || [ "$rec_id" = "$CLAUDE_CODE_SESSION_ID" ]; then
+		release_ext_lead_lock
+		return 0
+	fi
+	if [ "$(classify_ext_lead_owner)" = self ]; then
+		self_info="$(ext_lead_self_info)" || {
+			release_ext_lead_lock
+			die "다른 세션(${rec_id:0:8}…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
+		}
+		write_ext_lead_record "$self_info"
+		release_ext_lead_lock
+		warn "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${CLAUDE_CODE_SESSION_ID:0:8}…"
+		return 0
+	fi
+	release_ext_lead_lock
+	die "다른 세션(${rec_id:0:8}…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
 }
 
 # --- hc get <이름> --json 파싱 및 SEAT_CMD 옵션 대조 ---
@@ -267,7 +453,7 @@ S_SPACE=()
 opts_ok=1
 
 inspect_all() {
-	local i raw rc recover out
+	local i raw rc recover out rec_id note
 	local f_st f_addr f_app f_ast f_turn f_sid f_ost f_onote f_oact f_oexp f_oreason f_space _
 	opts_ok=1
 	S_STATUS[0]="external"
@@ -283,7 +469,13 @@ inspect_all() {
 	if [ -z "$rec_id" ]; then
 		S_OPT_NOTE[0]="외부 팀장 기록: 없음"
 	elif [ "$rec_id" != "$CLAUDE_CODE_SESSION_ID" ]; then
-		S_OPT_NOTE[0]="외부 팀장 기록: 다른 세션(${rec_id:0:8}…)"
+		case "$(classify_ext_lead_owner)" in
+		self) note="같은 프로세스(/clear 뒤) — 바꾸는 명령 때 자동 넘김" ;;
+		alive) note="옛 주인 살아 있음" ;;
+		gone) note="옛 주인 종료됨" ;;
+		*) note="판정 불가" ;;
+		esac
+		S_OPT_NOTE[0]="외부 팀장 기록: 다른 세션(${rec_id:0:8}…) — $note"
 	fi
 
 	for i in 1 2; do

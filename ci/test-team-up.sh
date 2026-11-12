@@ -1388,6 +1388,111 @@ for ro_args in "" "--check" "--status" "--lock status"; do
 		"$REPO_BEFORE"
 done
 
+# ---------------------------------------------------------------------------
+# #36: 외부 팀장 잠금 — 같은 Claude 프로세스가 /clear 뒤 새 세션 id가 된 경우(⑴~⑸)
+CASE="#36 ⑴⑵: 같은 프로세스(pid·lstart 모두 일치)·다른 세션 id → 읽기 전용은 무변경, --lock claim(force 없이)·--up은 새 세션 id로 넘김"
+SAME_PROC_DIFF_SID_LOCK="$(printf '%s\n42500\tSun Oct 18 15:36:35 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$SAME_PROC_DIFF_SID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+
+# 읽기 전용(--lock status, --check, --status)은 잠금 파일을 바꾸지 않음
+run_ext --lock status
+check "#36 읽기 전용 --lock status 종료 0" eq "$RC" 0
+check "#36 읽기 전용 --lock status 출력 유지(other live)" eq "$OUT" "other live"
+check "#36 읽기 전용 --lock status 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+
+run_ext --check
+check "#36 읽기 전용 --check 종료 0" eq "$RC" 0
+check "#36 읽기 전용 --check 변경 호출 없음" no_mutations
+check "#36 읽기 전용 --check 표 한 줄 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 같은 프로세스(/clear 뒤) — 바꾸는 명령·--lock claim 때 자동 넘김"
+check "#36 읽기 전용 --check 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+
+run_ext --status
+check "#36 읽기 전용 --status 종료 0" eq "$RC" 0
+check "#36 읽기 전용 --status 변경 호출 없음" no_mutations
+check "#36 읽기 전용 --status 잠금 상태(other live)" has "잠금 other live"
+check "#36 읽기 전용 --status 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+
+# ⑴ --lock claim (force 없이) → 새 세션 id로 넘기고 종료 0 + 한 줄 안내
+run_ext --lock claim
+check "#36 ⑴ --lock claim(force 없이) 종료 0" eq "$RC" 0
+check "#36 ⑴ --lock claim 한 줄 안내" has "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${EXT_SID:0:8}…"
+check "#36 ⑴ --lock claim 새 세션 2줄 기록으로 갱신" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+check "#36 ⑴ --lock claim 뒤 잠금 디렉터리 없음" test ! -e "$EXT_LOCK.lock"
+
+# ⑵ --up → 새 세션 id로 넘기고 진행 + 한 줄 안내
+printf '%s\n' "$SAME_PROC_DIFF_SID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext --up
+check "#36 ⑵ --up 종료 0" eq "$RC" 0
+check "#36 ⑵ --up 한 줄 안내" has "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${EXT_SID:0:8}…"
+check "#36 ⑵ --up 새 세션 2줄 기록으로 갱신" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+check "#36 ⑵ --up 뒤 잠금 디렉터리 없음" test ! -e "$EXT_LOCK.lock"
+
+# pid는 조상(42500)과 같지만 기록된 lstart가 다른 경우 → 같은 프로세스로 오판하지 않고 stale(gone)로 처리
+SAME_PID_DIFF_LSTART_LOCK="$(printf '%s\n42500\tSun Oct 18 12:00:00 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$SAME_PID_DIFF_LSTART_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext --lock status
+check "#36 pid만 같고 lstart 다름: --lock status는 stale" eq "$OUT" "stale"
+run_ext --lock claim
+check "#36 pid만 같고 lstart 다름: --lock claim 종료 0" eq "$RC" 0
+check "#36 pid만 같고 lstart 다름: 같은 프로세스 넘김 문구 미출력" not_has "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤):"
+check "#36 pid만 같고 lstart 다름: 자동 회수 문구 출력" has "외부 팀장 기록 자동 회수: 옛 세션(deadbeef…) 종료 확인"
+
+CASE="#36 ⑶⑷⑸: 다른 살아 있는 프로세스(pid 다름·lstart만 같음 포함) 거부 · 죽은 프로세스 stale 회수 유지 · 2줄째 누락/ps 실패 거부 유지"
+# ⑶ 다른 살아 있는 프로세스(lstart가 조상과 같아도 pid가 다르면 거부)
+OTHER_PID_SAME_LSTART_LOCK="$(printf '%s\n6000\tSun Oct 18 15:36:35 2026' "$OTHER_EXT_SID")"
+printf '%s\n' "$OTHER_PID_SAME_LSTART_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_procs" '{"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 15:36:35 2026"}}'
+run_ext --lock claim
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): --lock claim 거부(종료 3)" eq "$RC" 3
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): 넘김 문구 미출력" not_has "외부 팀장 기록 넘김"
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): 기록 불변" eq "$(cat "$EXT_LOCK")" "$OTHER_PID_SAME_LSTART_LOCK"
+run_ext --up
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): --up 거부(종료 1)" eq "$RC" 1
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): herdr 호출 0" eq "$(wc -l <"$LOG" | tr -d ' ')" 0
+check "#36 ⑶ 다른 살아 있는 pid(lstart 동일): 기록 불변" eq "$(cat "$EXT_LOCK")" "$OTHER_PID_SAME_LSTART_LOCK"
+
+# ⑷ 죽은 프로세스에서 기존 stale 자동 회수 유지
+printf '%s\n' "$GONE_PID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext --lock claim
+check "#36 ⑷ 죽은 프로세스: --lock claim 종료 0" eq "$RC" 0
+check "#36 ⑷ 죽은 프로세스: 자동 회수 문구 유지" has "외부 팀장 기록 자동 회수: 옛 세션(deadbeef…) 종료 확인"
+check "#36 ⑷ 죽은 프로세스: 넘김 문구 미출력" not_has "외부 팀장 기록 넘김"
+check "#36 ⑷ 죽은 프로세스: 기록 갱신" eq "$(cat "$EXT_LOCK")" "$SELF_LOCK_EXPECTED"
+
+# ⑸ 2줄째 없거나 ps 실패/조상 없음 시 거부 유지(기록이 같은 pid·lstart여도 ps 실패면 거부)
+printf '%s\n' "$OTHER_EXT_SID" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+run_ext --lock claim
+check "#36 ⑸ 2줄째 없음: --lock claim 거부(종료 3)" eq "$RC" 3
+check "#36 ⑸ 2줄째 없음: 기록 불변" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
+run_ext --up
+check "#36 ⑸ 2줄째 없음: --up 거부(종료 1)" eq "$RC" 1
+check "#36 ⑸ 2줄째 없음: 기록 불변" eq "$(cat "$EXT_LOCK")" "$OTHER_EXT_SID"
+
+printf '%s\n' "$SAME_PROC_DIFF_SID_LOCK" >|"$EXT_LOCK"
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_fail" "true"
+run_ext --lock claim
+check "#36 ⑸ ps 실패: --lock claim 거부(종료 3)" eq "$RC" 3
+check "#36 ⑸ ps 실패: 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+run_ext --up
+check "#36 ⑸ ps 실패: --up 거부(종료 1)" eq "$RC" 1
+check "#36 ⑸ ps 실패: 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+
+mkstate "$EXT_IMPL" "$EXT_CRITIC"
+setstate "ps_no_ancestor" "true"
+run_ext --lock claim
+check "#36 ⑸ 조상 없음: --lock claim 거부(종료 3)" eq "$RC" 3
+check "#36 ⑸ 조상 없음: 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+run_ext --up
+check "#36 ⑸ 조상 없음: --up 거부(종료 1)" eq "$RC" 1
+check "#36 ⑸ 조상 없음: 기록 불변" eq "$(cat "$EXT_LOCK")" "$SAME_PROC_DIFF_SID_LOCK"
+
 # shellcheck disable=SC2016
 echo "team-up 테스트: 통과 $PASS / 전체 $((PASS + FAIL)) (bash: $("$TEAM_UP_BASH" -c 'echo $BASH_VERSION'))"
 [ "$FAIL" = 0 ]

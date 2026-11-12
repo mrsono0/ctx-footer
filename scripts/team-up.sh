@@ -286,8 +286,10 @@ read_ext_lead_line2() {
 }
 
 classify_ext_lead_owner() {
-	local line2 rec_pid rec_lstart out rc cur_lstart
-	ext_lead_self_info >/dev/null || { printf 'unverifiable'; return 0; }
+	local self_info self_pid self_lstart line2 rec_pid rec_lstart out rc cur_lstart
+	self_info="$(ext_lead_self_info)" || { printf 'unverifiable'; return 0; }
+	self_pid="${self_info%%"$TAB"*}"
+	self_lstart="${self_info#*"$TAB"}"
 	line2="$(read_ext_lead_line2)" || { printf 'unverifiable'; return 0; }
 	rec_pid="${line2%%"$TAB"*}"
 	rec_lstart="${line2#*"$TAB"}"
@@ -299,7 +301,11 @@ classify_ext_lead_owner() {
 		if ! valid_lstart "$cur_lstart"; then
 			printf 'unverifiable'
 		elif [ "$cur_lstart" = "$rec_lstart" ]; then
-			printf 'alive'
+			if [ "$rec_pid" = "$self_pid" ] && [ "$rec_lstart" = "$self_lstart" ]; then
+				printf 'self'
+			else
+				printf 'alive'
+			fi
 		else
 			printf 'gone'
 		fi
@@ -338,7 +344,7 @@ ext_lock_state() {
 		return 0
 	fi
 	case "$(classify_ext_lead_owner)" in
-	alive) printf 'other live' ;;
+	alive | self) printf 'other live' ;;
 	gone) printf 'stale' ;;
 	*) printf 'unknown' ;;
 	esac
@@ -385,6 +391,16 @@ run_lock_cmd() {
 				echo "외부 팀장 기록 갱신: ${CLAUDE_CODE_SESSION_ID:0:8}…"
 				exit 0
 			fi
+			if [ "$st" = "other live" ] && [ "$(classify_ext_lead_owner)" = self ]; then
+				self_info="$(ext_lead_self_info)" || {
+					release_ext_lead_lock
+					die "외부 팀장 claude 프로세스(pid·시작 시각)를 확인할 수 없다; 사용자 승인 뒤 이 세션에서 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
+				}
+				write_ext_lead_record "$self_info"
+				release_ext_lead_lock
+				warn "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${CLAUDE_CODE_SESSION_ID:0:8}…"
+				exit 0
+			fi
 			release_ext_lead_lock
 			warn "외부 팀장 기록이 '$st' 상태다(${rec_id:0:8}…); 덮어쓰려면 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
 			exit 3
@@ -422,7 +438,7 @@ run_lock_cmd() {
 }
 
 ensure_external_lead_lock() {
-	local rec_id self_info
+	local rec_id self_info owner_state
 	[ "$EXT_LEAD" = 1 ] || return 0
 	acquire_ext_lead_lock
 	if [ ! -e "$EXT_LEAD_FILE" ]; then
@@ -438,11 +454,16 @@ ensure_external_lead_lock() {
 		release_ext_lead_lock
 		return 0
 	fi
-	if [ -n "$rec_id" ] && [ "$(classify_ext_lead_owner)" = gone ]; then
+	owner_state="$(classify_ext_lead_owner)"
+	if [ -n "$rec_id" ] && { [ "$owner_state" = gone ] || [ "$owner_state" = self ]; }; then
 		self_info="$(ext_lead_self_info)" || die_ext_lead_mismatch "$rec_id"
 		write_ext_lead_record "$self_info"
 		release_ext_lead_lock
-		warn "외부 팀장 기록 자동 회수: 옛 세션(${rec_id:0:8}…) 종료 확인"
+		if [ "$owner_state" = self ]; then
+			warn "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${CLAUDE_CODE_SESSION_ID:0:8}…"
+		else
+			warn "외부 팀장 기록 자동 회수: 옛 세션(${rec_id:0:8}…) 종료 확인"
+		fi
 		return 0
 	fi
 	die_ext_lead_mismatch "$rec_id"
@@ -461,7 +482,10 @@ if [ "$EXT_LEAD" = 1 ]; then
 	if [ "$mode" = up ]; then
 		rec_id="$(read_ext_lead_id)"
 		if [ -n "$rec_id" ] && [ "$rec_id" != "$CLAUDE_CODE_SESSION_ID" ]; then
-			[ "$(classify_ext_lead_owner)" = gone ] || die_ext_lead_mismatch "$rec_id"
+			case "$(classify_ext_lead_owner)" in
+			gone | self) ;;
+			*) die_ext_lead_mismatch "$rec_id" ;;
+			esac
 		fi
 	fi
 fi
@@ -668,6 +692,7 @@ check_member_opts() {
 		elif [ "$rec_id" != "$CLAUDE_CODE_SESSION_ID" ]; then
 			case "$(classify_ext_lead_owner)" in
 			gone) note="옛 주인 종료됨 — 바꾸는 명령 때 자동 회수" ;;
+			self) note="같은 프로세스(/clear 뒤) — 바꾸는 명령·--lock claim 때 자동 넘김" ;;
 			alive) note="옛 주인 살아 있음" ;;
 			*) note="판정 불가" ;;
 			esac

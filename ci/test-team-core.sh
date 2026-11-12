@@ -19,7 +19,13 @@ trap cleanup EXIT
 mkdir -p "${TMP}/bin"
 cp "${ROOT}/ci/mock/hc" "${TMP}/bin/hc"
 cp "${ROOT}/ci/mock/herdr-app" "${TMP}/bin/herdr-app"
-chmod +x "${TMP}/bin/hc" "${TMP}/bin/herdr-app"
+cp "${ROOT}/ci/mock/ps" "${TMP}/bin/ps"
+chmod +x "${TMP}/bin/hc" "${TMP}/bin/herdr-app" "${TMP}/bin/ps"
+export PATH="${TMP}/bin:${PATH}"
+if [ "$(command -v ps)" != "${TMP}/bin/ps" ]; then
+	echo "FATAL: ps가 모의(${TMP}/bin/ps)가 아니다: $(command -v ps)" >&2
+	exit 1
+fi
 MOCK_HC="${TMP}/bin/hc"
 MOCK_APP="${TMP}/bin/herdr-app"
 
@@ -27,9 +33,11 @@ STATE="${TMP}/hc-state.json"
 LOG="${TMP}/hc-calls.log"
 APP_STATE="${TMP}/app-state.json"
 APP_LOG="${TMP}/app-calls.log"
+PS_STATE="${TMP}/ps-state.json"
 printf '{"spaces": []}\n' >"${APP_STATE}"
+printf '{}\n' >"${PS_STATE}"
 : >"${APP_LOG}"
-export HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02
+export HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" MOCK_HERDR_STATE="${PS_STATE}" CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02
 T=$'\t'
 PASS=0
 FAIL=0
@@ -158,12 +166,21 @@ mkappstate() {
 	: >"${APP_LOG}"
 }
 
+mkpsstate() {
+	if [ "$#" -ge 1 ]; then
+		printf '%s\n' "$1" >"${PS_STATE}"
+	else
+		printf '{}\n' >"${PS_STATE}"
+	fi
+}
+
 run_core() {
 	: >"${LOG}"
 	: >"${APP_LOG}"
 	OUT="$(cd "${TEST_REPO}" && env -u HERDR_PANE_ID CF_EXTERNAL_LEAD=1 CLAUDE_CODE_SESSION_ID="${EXT_SID}" \
 		HC_BIN="${MOCK_HC}" MOCK_HC_STATE="${STATE}" MOCK_HC_LOG="${LOG}" \
 		HERDR_APP_BIN="${MOCK_APP}" MOCK_APP_STATE="${APP_STATE}" MOCK_APP_LOG="${APP_LOG}" \
+		MOCK_HERDR_STATE="${PS_STATE}" \
 		CF_APP_RETRIES=3 CF_APP_RETRY_SLEEP=0.02 \
 		"${TEST_BASH}" "${CORE_SCRIPT}" "$@" 2>&1)"
 	RC=$?
@@ -622,6 +639,138 @@ check "kill 후 rm 순서 호출" eq "$(grep -E '^(kill|rm)	' "${LOG}" | tr '\n'
 run_core --down cf-critic
 check "idle 상태 --down rc 0" eq "$RC" 0
 check "kill 후 rm 호출" eq "$(grep -E '^(kill|rm)	' "${LOG}" | tr '\n' ';')" "kill${T}cf-critic${T}--json;rm${T}cf-critic${T}--json;"
+
+# ===========================================================================
+# 5b. team-core.sh 외부 팀장 잠금 (#36 ⑹⑺⑻: 같은 프로세스 넘김 · --check 한 줄 · 다른 프로세스/판정 불가 거부)
+# ===========================================================================
+CASE="team-core 외부 팀장 잠금(#36 ⑹⑺⑻): 같은 프로세스(/clear 뒤) --check 무변경 표시 · --up/--down 자동 넘김 · 다른 프로세스/판정 불가 거부"
+SELF_CORE_LOCK_EXPECTED="$(printf '%s\n42500\tSun Oct 18 15:36:35 2026' "${EXT_SID}")"
+SAME_PROC_DIFF_SID_LOCK="$(printf '%s\n42500\tSun Oct 18 15:36:35 2026' "${OTHER_SID}")"
+mkpsstate
+
+# ⑺ --check 및 --status: 같은 프로세스·다른 세션 id일 때 파일을 바꾸지 않고 표에 한 줄 표시
+printf '%s\n' "${SAME_PROC_DIFF_SID_LOCK}" >|"${EXT_LOCK}"
+mkstate "impl:idle:${IMPL_CONV}" "critic:idle"
+run_core --check
+check "#36 ⑺ --check: 같은 프로세스·다른 세션 id rc 0" eq "$RC" 0
+check "#36 ⑺ --check: hc 변경 호출 없음" no_hc_mutations
+check "#36 ⑺ --check: 표에 같은 프로세스(/clear 뒤) 한 줄 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 같은 프로세스(/clear 뒤) — 바꾸는 명령 때 자동 넘김"
+check "#36 ⑺ --check: 잠금 파일 무변경" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+check "#36 ⑺ --check: 잠금 디렉터리 잔류 없음" test ! -e "${EXT_LOCK}.lock"
+
+run_core --status
+check "#36 ⑺ --status: 같은 프로세스·다른 세션 id rc 0" eq "$RC" 0
+check "#36 ⑺ --status: hc 변경 호출 없음" no_hc_mutations
+check "#36 ⑺ --status: 잠금 상태 other live 표시" has "팀장 모드 외부(Core), 잠금 other live"
+check "#36 ⑺ --status: 잠금 파일 무변경" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+
+# ⑹ --up: 같은 프로세스·다른 세션 id일 때 잠금을 새 세션 id로 넘기고 진행
+printf '%s\n' "${SAME_PROC_DIFF_SID_LOCK}" >|"${EXT_LOCK}"
+mkstate "impl:idle:${IMPL_CONV}"
+run_core --up
+check "#36 ⑹ --up: 같은 프로세스·다른 세션 id rc 0" eq "$RC" 0
+check "#36 ⑹ --up: 넘김 안내 한 줄 출력" has "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${EXT_SID:0:8}…"
+check "#36 ⑹ --up: 빠진 critic 기동 진행" has "cf-critic: 기동 완료(t28)"
+check "#36 ⑹ --up: 잠금 파일이 새 세션 id 2줄 기록으로 갱신" eq "$(cat "${EXT_LOCK}")" "${SELF_CORE_LOCK_EXPECTED}"
+check "#36 ⑹ --up: 잠금 디렉터리 잔류 없음" test ! -e "${EXT_LOCK}.lock"
+
+# ⑹ --down: 같은 프로세스·다른 세션 id일 때 잠금을 새 세션 id로 넘기고 진행
+printf '%s\n' "${SAME_PROC_DIFF_SID_LOCK}" >|"${EXT_LOCK}"
+mkstate "impl:done" "critic:idle"
+run_core --down cf-impl
+check "#36 ⑹ --down: 같은 프로세스·다른 세션 id rc 0" eq "$RC" 0
+check "#36 ⑹ --down: 넘김 안내 한 줄 출력" has "외부 팀장 기록 넘김(같은 프로세스, /clear 뒤): ${EXT_SID:0:8}…"
+check "#36 ⑹ --down: kill 후 rm 호출" eq "$(grep -E '^(kill|rm)	' "${LOG}" | tr '\n' ';')" "kill${T}cf-impl${T}--json;rm${T}cf-impl${T}--json;"
+check "#36 ⑹ --down: 잠금 파일이 새 세션 id 2줄 기록으로 갱신" eq "$(cat "${EXT_LOCK}")" "${SELF_CORE_LOCK_EXPECTED}"
+check "#36 ⑹ --down: 잠금 디렉터리 잔류 없음" test ! -e "${EXT_LOCK}.lock"
+
+# ⑻ 다른 살아 있는 프로세스(pid 다름 · lstart 다름 및 lstart 같음) → --up·--down 거부
+ALIVE_OTHER_LOCK="$(printf '%s\n6000\tSun Oct 18 14:00:00 2026' "${OTHER_SID}")"
+mkpsstate '{"ps_procs": {"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 14:00:00 2026"}}}'
+printf '%s\n' "${ALIVE_OTHER_LOCK}" >|"${EXT_LOCK}"
+mkstate "impl:done" "critic:idle"
+run_core --check
+check "#36 ⑻ 다른 살아 있는 프로세스 --check: rc 0" eq "$RC" 0
+check "#36 ⑻ 다른 살아 있는 프로세스 --check: 옛 주인 살아 있음 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 옛 주인 살아 있음"
+check "#36 ⑻ 다른 살아 있는 프로세스 --check: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${ALIVE_OTHER_LOCK}"
+
+run_core --up
+check "#36 ⑻ 다른 살아 있는 프로세스 --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 다른 살아 있는 프로세스 --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 다른 살아 있는 프로세스 --up: 거부 문구" has "다른 세션(deadbeef…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
+check "#36 ⑻ 다른 살아 있는 프로세스 --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${ALIVE_OTHER_LOCK}"
+
+run_core --down cf-impl
+check "#36 ⑻ 다른 살아 있는 프로세스 --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 다른 살아 있는 프로세스 --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 다른 살아 있는 프로세스 --down: 거부 문구" has "다른 세션(deadbeef…)이 외부 팀장으로 기록돼 있다; 사용자 승인 뒤 CF_EXTERNAL_LEAD=1 scripts/team-up.sh --lock claim --force"
+check "#36 ⑻ 다른 살아 있는 프로세스 --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${ALIVE_OTHER_LOCK}"
+
+OTHER_PID_SAME_LSTART_LOCK="$(printf '%s\n6000\tSun Oct 18 15:36:35 2026' "${OTHER_SID}")"
+mkpsstate '{"ps_procs": {"6000": {"ppid": 1, "comm": "/Users/mock/.local/bin/claude", "lstart": "Sun Oct 18 15:36:35 2026"}}}'
+printf '%s\n' "${OTHER_PID_SAME_LSTART_LOCK}" >|"${EXT_LOCK}"
+run_core --up
+check "#36 ⑻ 다른 pid + 같은 lstart --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 다른 pid + 같은 lstart --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 다른 pid + 같은 lstart --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${OTHER_PID_SAME_LSTART_LOCK}"
+
+run_core --down cf-impl
+check "#36 ⑻ 다른 pid + 같은 lstart --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 다른 pid + 같은 lstart --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 다른 pid + 같은 lstart --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${OTHER_PID_SAME_LSTART_LOCK}"
+
+# ⑻ pid는 같지만(42500) 기록된 lstart가 다른 경우 → 같은 프로세스로 오판하지 않고 거부
+mkpsstate
+SAME_PID_DIFF_LSTART_LOCK="$(printf '%s\n42500\tSun Oct 18 12:00:00 2026' "${OTHER_SID}")"
+printf '%s\n' "${SAME_PID_DIFF_LSTART_LOCK}" >|"${EXT_LOCK}"
+run_core --up
+check "#36 ⑻ 같은 pid + 다른 lstart --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 같은 pid + 다른 lstart --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 같은 pid + 다른 lstart --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PID_DIFF_LSTART_LOCK}"
+
+run_core --down cf-impl
+check "#36 ⑻ 같은 pid + 다른 lstart --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 같은 pid + 다른 lstart --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 같은 pid + 다른 lstart --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PID_DIFF_LSTART_LOCK}"
+
+# ⑻ 판정 불가(2줄째 없음 · ps 실패 · 조상 없음) → --up·--down 거부
+printf '%s\n' "${OTHER_SID}" >|"${EXT_LOCK}"
+run_core --check
+check "#36 ⑻ 2줄째 없음 --check: 판정 불가 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+run_core --up
+check "#36 ⑻ 2줄째 없음 --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 2줄째 없음 --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 2줄째 없음 --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${OTHER_SID}"
+run_core --down cf-impl
+check "#36 ⑻ 2줄째 없음 --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 2줄째 없음 --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 2줄째 없음 --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${OTHER_SID}"
+
+printf '%s\n' "${SAME_PROC_DIFF_SID_LOCK}" >|"${EXT_LOCK}"
+mkpsstate '{"ps_fail": true}'
+run_core --check
+check "#36 ⑻ ps 실패 --check: 판정 불가 표시" has "↳ 외부 팀장 기록: 다른 세션(deadbeef…) — 판정 불가"
+run_core --up
+check "#36 ⑻ ps 실패 --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ ps 실패 --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ ps 실패 --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+run_core --down cf-impl
+check "#36 ⑻ ps 실패 --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ ps 실패 --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ ps 실패 --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+
+mkpsstate '{"ps_no_ancestor": true}'
+run_core --up
+check "#36 ⑻ 조상 없음 --up: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 조상 없음 --up: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 조상 없음 --up: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+run_core --down cf-impl
+check "#36 ⑻ 조상 없음 --down: 거부 rc 1" eq "$RC" 1
+check "#36 ⑻ 조상 없음 --down: hc 호출 0" eq "$(wc -l <"${LOG}" | tr -d ' ')" 0
+check "#36 ⑻ 조상 없음 --down: 잠금 파일 불변" eq "$(cat "${EXT_LOCK}")" "${SAME_PROC_DIFF_SID_LOCK}"
+
+mkpsstate
+printf '%s\n' "${EXT_SID}" >"${EXT_LOCK}"
 
 # ===========================================================================
 # 6. core-watch.sh --send
