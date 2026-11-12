@@ -76,7 +76,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 
 ### critic 초기화(/new)·이름 재등록 절차
 
-- Core(M3 뒤): `scripts/core-watch.sh --critic-new`로 `/new`를 보내고 `hc get`이 idle·turn 증가인지 본다. 이름 재등록은 없다(Core 이름은 터미널 이름). worktree 선택창이 뜨면 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `hc keys cf-critic enter`로 1번(현재 worktree)을 고른다. TUI는 다음과 같다. critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`.
+- Core(M3 뒤): `scripts/core-watch.sh --critic-new`로 `/new`를 키 입력(`hc keys`)으로 보내고 `hc get`이 idle·turn 증가인지 본다(Core 터미널 안에서 `hc send`로 보낸 글은 `<hc from=…>` 태그로 감싸져 슬래시 명령이 되지 않는다 — #35). worktree 선택창(idle·turn 그대로)이면 스크립트가 enter 1회로 1번(현재 worktree)을 고른다. 이름 재등록은 없다(Core 이름은 터미널 이름). `--critic-new`가 rc 0이 아니면 요청을 보내지 않고 lead에 `BLOCKER`. TUI는 다음과 같다. critic이 idle이고 입력란이 비었는지 확인하고 `herdr pane send-text <critic pane> "/new"` + `herdr pane send-keys <critic pane> enter`를 보낸다. worktree 선택 등 대화상자가 뜨면(기동 명령의 `--disable worktrees`로 worktree 선택창은 뜨지 않는 것이 정상이다 — 사용자 승인 2026-10-14) 요청을 보내지 않고 lead에 `BLOCKER` — lead가 `Use current Git worktree`를 1회 선택하고, 새 worktree는 만들지 않는다. 새 대화의 입력란이 비었고 `herdr agent list`에서 `cf-critic`이 그 pane을 가리킬 때 `herdr agent prompt cf-critic "<메시지>"`를 보낸다. 2026-10-11 cf-lead는 `/new` 뒤 첫 입력이 들어갈 때 agent 세션 id가 바뀌고 이름 등록이 풀린 사례를 관측했다: 보낸 뒤 `herdr agent list`에서 `cf-critic`이 그 pane을 가리키지 않으면, 다른 pane이 그 이름을 쓰지 않음을 확인한 뒤 `herdr agent rename <critic pane> cf-critic`으로 다시 등록하고 `herdr agent get cf-critic`으로 확인한다. 보내기 전이나 뒤에 준비 상태·이름을 확인할 수 없으면 lead에 `BLOCKER`.
 
 ### agy 확인창 예외(Context7)·sandbox 밖 명령
 
@@ -85,7 +85,7 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 확인창 펼쳐 읽기(ctrl+g·Page Down)·zoom 금지
 
 (아래 「위 「확인창이 떠 있으면 보내지 않는다」」·「위 「포커스는 옮기지 않는다」」는 AGENTS.md §5 「보내기 전에 받는 쪽 입력란을 본다」 항목을 가리킨다.)
-- Core: 확인창은 `hc get <이름> --json`의 `status.state == blocked`와 `status.msg`로 읽고, 팀장은 `scripts/core-watch.sh --approve-once <이름> --allow-file <회차 지시서의 허용 파일>`(그 파일의 한 줄과 확인창 명령 원문이 바이트 그대로 일치할 때만 1번 「이번만」 — docs/04 표. 허용 파일이 없거나 맞는 줄이 없으면 아무것도 답하지 않는다)으로 답한다. `msg`가 비거나 잘리면 응답하지 않고 사용자에게 알린다. 아래 펼치기 절차는 TUI 전용이다. 확인창 내용이 잘려 보이면 팀장은 zoom 없이 펼친다: `herdr pane send-keys <pane> ctrl+g`(agy 명령 확인창) 뒤 `herdr pane read <pane> --source visible`로 화면에 「Full Command」가 보이는지 확인하고 읽는다. 표시가 `(a–b of N lines)`이고 b가 N보다 작으면 `herdr pane send-text <pane> $'\e[6~'`(Page Down — herdr `send-keys`에는 이 키 이름이 없다. `$'…'`를 해석하는 bash·zsh에서)를 보내고 다시 읽기를 b가 N이 될 때까지 되풀이한 뒤 `esc`. Page Down과 `esc`는 펼친 화면(「Full Command」)이 보일 때만 보낸다 — 안 보이면 더 보내지 않고 사용자에게 알린다(선택 메뉴에서는 Page Down이 커서를 마지막 항목으로, `esc`가 확인창 취소로 이어질 수 있다). 답하기 전에 원래 확인창으로 돌아왔고 커서가 1번에 있는지 `pane read`로 확인한다. MCP 도구 확인창의 `ctrl+o` 펼침은 같은 방식으로 시도하되 미시험이라, 펼쳐지지 않으면 사용자에게 알린다. 위 「확인창이 떠 있으면 보내지 않는다」의 예외는 이렇게 팀장이 확인창을 읽고 답하려고 보내는 키뿐이다. `herdr pane zoom`은 쓰지 않는다 — 그 pane으로 포커스를 옮긴다(2026-10-17 관측; 위 「포커스는 옮기지 않는다」와 어긋난다).
+- Core: 확인창은 `hc get <이름> --json`의 `status.state == blocked`와 `status.msg`로 읽고, 팀장은 `scripts/core-watch.sh --approve-once <이름> --allow-file <회차 지시서의 허용 파일>`(그 파일의 한 줄과 확인창 명령 원문이 바이트 그대로 일치할 때만 1번 「이번만」 — docs/04 표. 허용 파일이 없거나 맞는 줄이 없으면 아무것도 답하지 않는다)으로 답한다. `msg`가 비거나 잘리면 응답하지 않고 사용자에게 알린다. 예외 둘(사용자 결정 2026-11-12, 결정 기록 `cf-work/issues/4/ops-rules/DECISIONS.md` 「확인창 상시 응답 범위 두 가지」): ① cf-impl이 `scripts/core-watch.sh --send cf-critic`으로 REVIEW-REQ를 보내는 확인창 ② 사용자가 승인한 커밋의 `git add`·`git commit` 확인창 — `msg`가 잘려도 팀장은 화면(`hc read`)에서 확인창의 전체 명령을 읽어 지시서(파일 목록·메시지 파일)와 글자 그대로 같고 커서가 1번에 있을 때만 `hc keys <이름> enter`로 1번(이번만)을 고르고 회차 `lead-approvals.tsv`에 적는다. 이 화면 읽기는 확인창 내용을 읽는 데만 쓰고 상태 판정에는 쓰지 않는다. 아래 펼치기 절차는 TUI 전용이다. 확인창 내용이 잘려 보이면 팀장은 zoom 없이 펼친다: `herdr pane send-keys <pane> ctrl+g`(agy 명령 확인창) 뒤 `herdr pane read <pane> --source visible`로 화면에 「Full Command」가 보이는지 확인하고 읽는다. 표시가 `(a–b of N lines)`이고 b가 N보다 작으면 `herdr pane send-text <pane> $'\e[6~'`(Page Down — herdr `send-keys`에는 이 키 이름이 없다. `$'…'`를 해석하는 bash·zsh에서)를 보내고 다시 읽기를 b가 N이 될 때까지 되풀이한 뒤 `esc`. Page Down과 `esc`는 펼친 화면(「Full Command」)이 보일 때만 보낸다 — 안 보이면 더 보내지 않고 사용자에게 알린다(선택 메뉴에서는 Page Down이 커서를 마지막 항목으로, `esc`가 확인창 취소로 이어질 수 있다). 답하기 전에 원래 확인창으로 돌아왔고 커서가 1번에 있는지 `pane read`로 확인한다. MCP 도구 확인창의 `ctrl+o` 펼침은 같은 방식으로 시도하되 미시험이라, 펼쳐지지 않으면 사용자에게 알린다. 위 「확인창이 떠 있으면 보내지 않는다」의 예외는 이렇게 팀장이 확인창을 읽고 답하려고 보내는 키뿐이다. `herdr pane zoom`은 쓰지 않는다 — 그 pane으로 포커스를 옮긴다(2026-10-17 관측; 위 「포커스는 옮기지 않는다」와 어긋난다).
 
 ### 부팀장이 있을 때
 
@@ -169,7 +169,8 @@ AGENTS.md에서 옮긴 긴 절차·관측 이력이다. 문장은 옮기기만 �
 ### 해시·수치
 
 - **해시·수치**
-  - 64자 해시는 `shasum -a 256` 출력을 그대로 붙일 때만 쓴다. 손으로 옮길 때는 앞 16자만 쓴다. 지시서에는 `shasum -a 256 <파일> | cut -c1-16` 꼴을 넣는다.
+  - 64자 해시는 `shasum -a 256` 출력을 그대로 붙일 때만 쓴다. 손으로 옮길 때는 앞 16자만 쓴다. 지시서에는 `shasum -a 256 <파일> | cut -c1-16` 꼴을 넣는다. 메시지·보고의 해시 표기는 앞 16자로 통일한다(마탑 공통 P4, #37).
+  - 재지 않은 해시는 쓰지 않는다. 앞 16자만 아는 값을 64자로 늘려 적지 않는다(2026-11-12 #36 r1 관측 — 요청서에 앞 16자만 맞는 64자 해시가 적혔다).
   - 해시는 작성자가 쓰기를 멈춘(idle) 뒤 잰다.
   - 보낸 파일은 고치지 않고 `-v2`처럼 새 이름으로 낸다.
   - 보고 순번은 다시 쓰지 않는다.
