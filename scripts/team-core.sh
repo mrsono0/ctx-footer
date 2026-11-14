@@ -20,7 +20,7 @@ SEAT_KIND=(claude agy codex)
 SEAT_CMD=(
 	""
 	"agy --model $IMPL_MODEL --mode accept-edits --sandbox"
-	'codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort="high"'
+	'codex --search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort="high"'
 )
 
 die() { echo "team-core: $*" >&2; exit 1; }
@@ -841,7 +841,7 @@ up)
 	else
 		start_seat 1 agy --model "$IMPL_MODEL" --mode accept-edits --sandbox || fail=1
 	fi
-	start_seat 2 codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c 'model_reasoning_effort="high"' || fail=1
+	start_seat 2 codex --search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c 'model_reasoning_effort="high"' || fail=1
 	exit "$fail"
 	;;
 esac

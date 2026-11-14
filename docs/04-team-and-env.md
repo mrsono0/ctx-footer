@@ -8,7 +8,7 @@ lectureforge-infra(LFI) 팀 운영에서 검증한 것을 그대로 옮기고, �
 | `cf-lead` | 팀장 (Claude Code) | `claude --name cf-lead --permission-mode auto` — 공용 herdr-core(Core) 터미널 `cf-lead`(탑주가 명부 「Core 길」 명령으로 띄움, `env CF_EXTERNAL_LEAD=1`) — 사용자 결정 2026-11-09. M5 이동 전까지는 데스크톱 외부 팀장 세션(2026-10-17 꼴). 되돌리면 데스크톱 또는 Herdr 안 pane(§7) | 추적 파일 내용을 편집·커밋하지 않는다(예외: `i<번호>` 생성·삭제, `main`↔`i<번호>` 전환, `main`으로 `merge --ff-only`, 작업 뿌리 `cf-work/` 쓰기와 이관(AGENTS.md §9). 그 밖의 git 쓰기는 하지 않는다). 배정·이슈 관리(AGENTS.md §8)·사용자 승인·최종 확인 |
 | `cf-vice` | 부팀장 (Claude Code, 선택 — 없으면 팀장이 혼자 운영한다) | `claude` (opus) — Herdr 안 팀 작업공간 pane(label `CF 부팀장 · Claude`) | 저장소 파일을 쓰지 않고 팀원에게 입력하지 않는다. 읽기 전용 감시·독립 재확인·초안 검토 의견, 팀장과 세션 간 메시지(AGENTS.md §1·§5) |
 | `cf-impl` | 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` | **유일한 쓰기·커밋 담당**(sandbox 켬, 전역 `toolPermission` `proceed-in-sandbox`, 2026-10-15 교체 승인 — 이전 GJC `gjc --mpreset opus5-codex56-pro`) |
-| `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
+| `cf-critic` | 비판적 검토 + 조사(웹 검색) (Codex) | `codex --search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort="high"` | 샌드박스·승인 없음(--yolo, 사용자 결정). `--no-daemon`(사용자 공용 백그라운드 서버에 붙지 않아 끝내면 남는 프로세스가 없다 — 사용자 결정 2026-11-14, #40). 저장소 쓰기·커밋은 하지 않는다. 판정 담당(구현자와 다른 모델 계열). 자기가 조사한 사실은 판정하지 않는다(cf-lead가 원문 대조) |
 
 - 근거: 사용자 결정(2026-10-11, lfi-lead 경유). LFI 조사 비교에서 Codex 계열이 가장 빨랐다(24~117초). 긴 조사에서 지어낸 인용 1건이 있어 critic 조사 인용은 cf-lead가 원문과 대조한다.
 - 상주 scout가 필요해지면 4석째 `cf-scout`(GJC kimi3)를 추가한다(스크립트에 자리만 비워 둔다).

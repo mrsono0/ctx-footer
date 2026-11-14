@@ -43,7 +43,7 @@
 |---|---|---|---|
 | 사용자 | — | 요구·범위, 계획 확정, 커밋·태그·릴리스, 규칙·전역 설정 변경 승인(승인된 커밋의 `main` 푸시는 cf-lead에 위임) | — |
 | `cf-impl` 구현 (agy) | `agy --model gemini-4-argon-high --mode accept-edits --sandbox` (파일 편집은 확인 없이 — 사용자 승인 2026-10-15 「2. 승인」, GJCH 시험 근거. sandbox 켬 — 셸 승인 정책은 agy 전역 설정 `~/.gemini/antigravity-cli/settings.json`의 `"toolPermission": "proceed-in-sandbox"`(sandbox 안 명령은 자동, 밖 실행은 확인창 — 사용자 승인 2026-10-15). `--mode auto`·`--dangerously-skip-permissions` 금지. 사용자 결정 2026-10-15 「2. 교체 승인」, 이전 GJC `gjc --mpreset opus5-codex56-pro`) | 배정된 단계 실행, **저장소 쓰기·커밋의 유일한 담당**, 동결 사본을 만들어 critic에 리뷰 요청, 지적 반영과 재요청을 상한까지 스스로 돌림, 완료 보고 | 범위·우선순위 결정, 규칙·권한 파일 작성(팀장 초안을 그대로 반영만), 사용자 승인 생략 |
-| `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees --disable memories -m gpt-6.1-sol -c model_reasoning_effort="high"` | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
+| `cf-critic` 판정·조사 (Codex) | `codex --search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort="high"` (`--no-daemon`: 사용자 공용 백그라운드 서버에 붙지 않아 끝내면 남는 프로세스가 없다 — 사용자 결정 2026-11-14, #40) | 리뷰 판정(구현자와 다른 모델 계열), 조사(웹 검색, 사실마다 출처와 원문 인용), 수정안은 회신 안의 `.md`·`.patch` 내용으로 | 저장소 쓰기·커밋·설치·삭제(`--yolo`는 사용자 결정이며 규칙 준수를 신뢰한다), 자기가 조사한 사실의 판정. 테스트·점검은 동결 사본에서만 |
 
 - 모두 이 저장소에서 실행한다. 기동·복구는 `scripts/team-up.sh`(외부 팀장은 `CF_EXTERNAL_LEAD=1 scripts/team-up.sh …`).
 - agent 이름은 herdr 전역이고 Core 터미널 이름은 Core 안에서 전역이다. 접두어 `cf-`만 쓰고 다른 팀(`lfi-`·`lfai-` 등)의 pane·터미널·이름은 건드리지 않는다. 주소는 이름(`cf-impl`·`cf-critic`)으로 쓰고 pane ID(TUI)·터미널 주소 `t<n>`(Core)는 `herdr agent list`·`hc get`으로 확인한다(재시작 때 바뀐다).

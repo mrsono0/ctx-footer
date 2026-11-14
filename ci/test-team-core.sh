@@ -113,7 +113,7 @@ for arg in sys.argv[1:]:
         t_state = parts[2] or "live"
         argv = [
             "codex", "--search", "--yolo", "--disable", "worktrees",
-            "--disable", "memories", "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high",
+            "--disable", "memories", "--no-daemon", "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high",
         ]
         terms.append({
             "address": "t27",
@@ -278,12 +278,14 @@ check "herdr.space 라벨 있어도 옵션 일치 rc 0" eq "$RC" 0
 check "--check 표 cf-impl 행에 herdr.space 값 표시" line_matches "^impl[[:space:]]+cf-impl[[:space:]]+t26[[:space:]]+agy[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+dummy-space-01[[:space:]]+유지\$"
 check "--check 표 cf-critic 행에 herdr.space 없음 유지" line_matches "^critic[[:space:]]+cf-critic[[:space:]]+t27[[:space:]]+codex[[:space:]]+live\\(idle\\)[[:space:]]+1[[:space:]]+없음[[:space:]]+유지\$"
 
-# 옵션 불일치(cf-impl --model 값 다름, cf-critic --sandbox 등 누락)
+# 옵션 불일치(cf-impl --model 값 다름, cf-critic --no-daemon 누락)
 patch_term "cf-impl" '{"argv": ["agy", "--model", "wrong-model", "--mode", "accept-edits"]}'
+patch_term "cf-critic" '{"argv": ["codex", "--search", "--yolo", "--disable", "worktrees", "--disable", "memories", "-m", "gpt-6.1-sol", "-c", "model_reasoning_effort=high"]}'
 run_core --check
 check "옵션 불일치 시 rc 1" eq "$RC" 1
-check "옵션 불일치 안내 줄" has "옵션 불일치:"
+check "옵션 불일치 안내 줄" has "옵션 불일치:" "없음 --no-daemon"
 check "cf-impl mismatch 요약 줄" line_matches "^cf-impl t26 mismatch 실제=.* 기대=.*"
+check "cf-critic mismatch 요약 줄(--no-daemon 누락)" line_matches "^cf-critic t27 mismatch 실제=.* 기대=--search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort=high\$"
 
 # critic 없음
 mkstate "impl:idle"
@@ -312,7 +314,7 @@ check "대화 id 없음 경고 출력" has "대화 id 없음 — 새 대화로 �
 check "hc run 2회 호출됨" eq "$(grep -c '^run	' "${LOG}")" 2
 check "CF_HERDR_SPACE 미설정 시 herdr.space 라벨 미전달" eq "$(grep -c 'herdr\.space' "${LOG}")" 0
 check "CF_HERDR_SPACE 미설정 시 cf-impl 기본 라벨 순서(--label team=cf --label role=impl --)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-impl${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=impl${T}--${T}agy${T}" "${LOG}")" 1
-check "CF_HERDR_SPACE 미설정 시 cf-critic 기본 라벨 순서(--label team=cf --label role=critic --)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-critic${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=critic${T}--${T}codex${T}" "${LOG}")" 1
+check "CF_HERDR_SPACE 미설정 시 cf-critic 기본 라벨 순서·--no-daemon 기동 명령(--label team=cf --label role=critic --)" eq "$(grep -c "^run${T}--bg${T}--json${T}--no-parent${T}--outlive-parent${T}--name${T}cf-critic${T}--cwd${T}${TEST_REPO}${T}--label${T}team=cf${T}--label${T}role=critic${T}--${T}codex${T}--search${T}--yolo${T}--disable${T}worktrees${T}--disable${T}memories${T}--no-daemon${T}-m${T}gpt-6.1-sol${T}-c${T}model_reasoning_effort=\"high\"\$" "${LOG}")" 1
 run_core --check
 check "기동 후 재점검 rc 0" eq "$RC" 0
 
