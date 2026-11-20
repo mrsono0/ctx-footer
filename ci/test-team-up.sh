@@ -218,7 +218,7 @@ check "다른 탭 경고" has "cf-impl(wN:p3)이 팀장과 다른 탭"
 # --- 점검: 팀원 실행 옵션 비교 (argv-r1) -------------------------------------
 CASE="점검 옵션 ①⑦: 두 석 모두 일치(기동형) + 자식 MCP 비밀 값 미출력"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
-setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model","gemini-4-argon-high","--mode","accept-edits","--sandbox"]},{"pid":202,"name":"node","argv":["node","context7-mcp","--api-key","SECRET-SENTINEL-123"],"cmdline":"node context7-mcp --api-key SECRET-SENTINEL-123"},{"pid":203,"name":"notebooklm-mcp"}]}'
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model","gemini-4-neon-xhigh","--mode","accept-edits","--sandbox"]},{"pid":202,"name":"node","argv":["node","context7-mcp","--api-key","SECRET-SENTINEL-123"],"cmdline":"node context7-mcp --api-key SECRET-SENTINEL-123"},{"pid":203,"name":"notebooklm-mcp"}]}'
 run
 check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
@@ -235,9 +235,9 @@ setstate "process_info.wN:p4" '{"foreground_processes":[{"pid":102,"name":"codex
 run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
-check "cf-impl 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --model gemini-4-argon-high, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
+check "cf-impl 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --model gemini-4-neon-xhigh, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
 check "cf-critic 기대 단위 스냅샷" has "        ↳ 옵션 불일치: 없음 --search, --yolo, --disable worktrees, --disable memories, --no-daemon, -m gpt-6.1-sol, -c model_reasoning_effort=high (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up)"
-check "공통 한 줄 cf-impl mismatch" has "cf-impl wN:p3 mismatch 실제=없음 기대=--model gemini-4-argon-high --mode accept-edits --sandbox 대화=$IMPL_SID"
+check "공통 한 줄 cf-impl mismatch" has "cf-impl wN:p3 mismatch 실제=없음 기대=--model gemini-4-neon-xhigh --mode accept-edits --sandbox 대화=$IMPL_SID"
 check "공통 한 줄 cf-critic mismatch" has "cf-critic wN:p4 mismatch 실제=없음 기대=--search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort=high"
 
 CASE="점검 옵션 ②⑦: agy 복구형(--conversation만) → 불일치 + 비밀 미출력"
@@ -246,13 +246,13 @@ setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy",
 run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
-check "agy 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --model gemini-4-argon-high, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
+check "agy 옵션 불일치 표시" has "        ↳ 옵션 불일치: 없음 --model gemini-4-neon-xhigh, --mode accept-edits, --sandbox (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
 check "옵션 줄 1개(impl만)" eq "$(printf '%s\n' "$OUT" | grep -c '↳ 옵션')" 1
 check "비밀 값 미출력" not_has "SECRET-SENTINEL-123"
 
 CASE="점검 옵션 ③: agy 복구형 + 전체 옵션(순서 무관) → 일치"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
-setstate "process_info.wN:p3" "{\"foreground_processes\":[{\"pid\":101,\"name\":\"agy\",\"argv\":[\"agy\",\"--conversation\",\"$IMPL_SID\",\"--sandbox\",\"--mode\",\"accept-edits\",\"--model\",\"gemini-4-argon-high\"]}]}"
+setstate "process_info.wN:p3" "{\"foreground_processes\":[{\"pid\":101,\"name\":\"agy\",\"argv\":[\"agy\",\"--conversation\",\"$IMPL_SID\",\"--sandbox\",\"--mode\",\"accept-edits\",\"--model\",\"gemini-4-neon-xhigh\"]}]}"
 run
 check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
@@ -269,7 +269,7 @@ check "옵션 줄 1개(critic만)" eq "$(printf '%s\n' "$OUT" | grep -c '↳ 옵
 
 CASE="점검 옵션 ⑤: --model=값 꼴 정규화 → 일치"
 mkstate "$LEAD" "$IMPL" "$CRITIC"
-setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model=gemini-4-argon-high","--mode=accept-edits","--sandbox"]}]}'
+setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--model=gemini-4-neon-xhigh","--mode=accept-edits","--sandbox"]}]}'
 run
 check "종료 코드 0" eq "$RC" 0
 check "변경 명령 없음" no_mutations
@@ -281,8 +281,8 @@ setstate "process_info.wN:p3" '{"foreground_processes":[{"pid":101,"name":"agy",
 run
 check "종료 코드 1" eq "$RC" 1
 check "변경 명령 없음" no_mutations
-check "없음·다름 한 줄 표시" has "        ↳ 옵션 불일치: 없음 --sandbox; 다름 --model(기대 gemini-4-argon-high) (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
-check "공통 한 줄 실제·기대 요약" has "cf-impl wN:p3 mismatch 실제=--model=<다름> --mode accept-edits 기대=--model gemini-4-argon-high --mode accept-edits --sandbox 대화=$IMPL_SID"
+check "없음·다름 한 줄 표시" has "        ↳ 옵션 불일치: 없음 --sandbox; 다름 --model(기대 gemini-4-neon-xhigh) (복구: idle·비포커스 확인 → /quit → scripts/team-up.sh --up <id>)"
+check "공통 한 줄 실제·기대 요약" has "cf-impl wN:p3 mismatch 실제=--model=<다름> --mode accept-edits 기대=--model gemini-4-neon-xhigh --mode accept-edits --sandbox 대화=$IMPL_SID"
 check "실제 값 미출력" not_has "SECRET-SENTINEL-123"
 
 CASE="점검 옵션 E1: 반복 깃발(-c other=1 -c model_reasoning_effort=high) → 일치"
@@ -393,7 +393,7 @@ check "split 2회" eq "$(count "pane${T}split")" 2
 check "impl은 팀장 아래(0.6)" eq "$(field "$i" split_from) $(field "$i" split_direction) $(field "$i" split_ratio)" "wN:p1 down 0.6"
 check "critic은 impl 오른쪽(1/2)" eq "$(field "$c" split_from) $(field "$c" split_direction) $(field "$c" split_ratio)" "$i right 0.500"
 check "배치 impl|critic" eq "$(order)" "$i $c"
-check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-argon-high --mode accept-edits --sandbox"
+check "impl 실행 명령" eq "$(field "$i" command)" "cd $ROOT && agy --model gemini-4-neon-xhigh --mode accept-edits --sandbox"
 check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
 check "critic 실행 명령" eq "$(field "$c" command)" "cd $ROOT && codex --search --yolo --disable worktrees --disable memories --no-daemon -m gpt-6.1-sol -c model_reasoning_effort=\"high\""
 check "send-text 없음" eq "$(count "send-text")" 0
@@ -650,7 +650,7 @@ mkstate "$LEAD" "$CRITIC"
 run --up "$RESUME_SID"
 i="$(pane_named cf-impl)"
 check "종료 코드 0" eq "$RC" 0
-check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-argon-high --mode accept-edits --sandbox"
+check "resume 명령" eq "$(field "$i" command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-neon-xhigh --mode accept-edits --sandbox"
 check "run 1회(impl만)" eq "$(count "pane${T}run")" 1
 check "배치 impl|critic" eq "$(order)" "$i wN:p4"
 check "impl label" eq "$(field "$i" label)" "CF 구현 · agy"
@@ -1210,7 +1210,7 @@ mkstate "$LEAD" "wN:p3|wN|CF 구현 · agy|||$ROOT" "$CRITIC"
 run --up "$RESUME_SID"
 check "빈 셸 + id 종료 코드 0" eq "$RC" 0
 check "빈 셸 + id split 없음" eq "$(count "pane${T}split")" 0
-check "빈 셸 + id --conversation 기동" eq "$(field wN:p3 command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-argon-high --mode accept-edits --sandbox"
+check "빈 셸 + id --conversation 기동" eq "$(field wN:p3 command)" "cd $ROOT && agy --conversation $RESUME_SID --model gemini-4-neon-xhigh --mode accept-edits --sandbox"
 check "빈 셸 + id는 대화 id 없음 경고 안 냄" not_has "대화 id 없음 — 새 대화로 띄움"
 
 CASE="#16: --up 살아 있는 팀원 옵션 불일치 → 건드리지 않고 한 줄 알림 + 확인창 미응답 + 배치 보정"

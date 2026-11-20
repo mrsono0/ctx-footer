@@ -12,7 +12,7 @@ HERDR_APP_BIN="${HERDR_APP_BIN:-herdr-app}"
 APP_RETRIES="${CF_APP_RETRIES:-10}"
 APP_RETRY_SLEEP="${CF_APP_RETRY_SLEEP:-0.5}"
 case "$APP_RETRIES" in '' | *[!0-9]* | 0) APP_RETRIES=10 ;; esac
-IMPL_MODEL="gemini-4-argon-high"
+IMPL_MODEL="gemini-4-neon-xhigh"
 
 SEAT_ROLE=(lead impl critic)
 SEAT_NAME=(cf-lead cf-impl cf-critic)

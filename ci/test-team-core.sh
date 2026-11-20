@@ -90,7 +90,7 @@ for arg in sys.argv[1:]:
         argv = ["agy"]
         if conv:
             argv += ["--conversation", conv]
-        argv += ["--model", "gemini-4-argon-high", "--mode", "accept-edits", "--sandbox"]
+        argv += ["--model", "gemini-4-neon-xhigh", "--mode", "accept-edits", "--sandbox"]
         terms.append({
             "address": "t26",
             "argv": argv,

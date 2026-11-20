@@ -14,7 +14,7 @@ set -u
 
 # --- 팀 정의: AGENTS.md 「팀」 표와 일치시킨다 (인덱스 0 = 팀장, 1..2 = 아래 줄 왼쪽부터) ---
 # 상주 scout가 필요해지면 4석째 cf-scout(GJC kimi3)를 이 표에 추가한다(docs/04 §1 — 지금은 자리만 비워 둠).
-IMPL_MODEL="gemini-4-argon-high"
+IMPL_MODEL="gemini-4-neon-xhigh"
 SEAT_ROLE=(lead impl critic)
 SEAT_NAME=(cf-lead cf-impl cf-critic)
 SEAT_KIND=(claude agy codex) # Herdr가 감지하는 agent 종류
